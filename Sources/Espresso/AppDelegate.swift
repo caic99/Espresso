@@ -7,9 +7,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var sectionHeader: NSMenuItem!
     private var indefiniteItem: NSMenuItem!
-    private var durationSlider: NSSlider!
+    private var durationSlider: DurationSlider!
     private var sliderHoursLabel: NSTextField!
     private var sliderMinutesLabel: NSTextField!
+    private var timedItems: [NSMenuItem] = []
+    private var sleepInfo = SleepInfo.none
     private var deactivateItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
     private var lidBlockItem: NSMenuItem!
@@ -23,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         lidBlocker.reconcileAtLaunch()
+        sleepInfo = SleepInfo.current()
         keepAwake.onChange = { [weak self] in
             guard let self else { return }
             if !self.keepAwake.isActive {
@@ -36,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !PowerSource.isOnAC() {
                 self.disengageLidBlockOrWarn()
             }
+            self.sleepInfo = SleepInfo.current()  // AC/battery profiles differ
             self.refreshUI()
         }
         powerSource.startObserving()
@@ -88,6 +92,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let sliderItem = NSMenuItem()
         sliderItem.view = makeSliderRow()
         menu.addItem(sliderItem)
+
+        // Keyboard/VoiceOver path to the same stops: view-backed items are
+        // inert in menu key navigation, so the slider alone would make timed
+        // sessions pointer-only.
+        let timedParent = NSMenuItem(title: "Timed", action: nil, keyEquivalent: "")
+        timedParent.indentationLevel = 1
+        timedParent.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "Timed")
+        let timedMenu = NSMenu()
+        for (index, minutes) in Self.sliderStops.enumerated() {
+            let item = NSMenuItem(title: Self.durationTitle(minutes),
+                                  action: #selector(timedFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            timedMenu.addItem(item)
+            timedItems.append(item)
+        }
+        timedParent.submenu = timedMenu
+        menu.addItem(timedParent)
         menu.addItem(.separator())
 
         displaySleepItem = NSMenuItem(title: "Keep Display Awake",
@@ -123,9 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : defaults.integer(forKey: Self.sliderIndexKey)
         let index = min(max(stored, 0), Self.sliderStops.count - 1)
 
-        let slider = NSSlider(value: Double(index), minValue: 0,
-                              maxValue: Double(Self.sliderStops.count - 1),
-                              target: self, action: #selector(sliderChanged(_:)))
+        let slider = DurationSlider(value: Double(index), minValue: 0,
+                                    maxValue: Double(Self.sliderStops.count - 1),
+                                    target: self, action: #selector(sliderChanged(_:)))
+        slider.onCommit = { [weak self] in self?.commitSliderSelection() }
         slider.numberOfTickMarks = Self.sliderStops.count
         slider.allowsTickMarkValuesOnly = true
         slider.isContinuous = true
@@ -166,7 +190,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return (h > 0 ? "\(h)h" : "", m > 0 ? "\(m)m" : "")
     }
 
+    private static func durationTitle(_ minutes: Int) -> String {
+        let parts = hourMinuteParts(minutes)
+        return [parts.hours, parts.minutes].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
+        sleepInfo = SleepInfo.current()
         refreshUI()  // sync geometry (hidden rows) while still "closed"
         menuIsOpen = true
         // Keep the countdown live while the menu is held open. Must run in
@@ -191,21 +221,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         keepAwake.activate(minutes: nil)
     }
 
+    /// Continuous action: preview only. The commit comes from DurationSlider's
+    /// explicit end-of-gesture callback, never inferred from event state.
     @objc private func sliderChanged(_ sender: NSSlider) {
         let index = min(max(Int(sender.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
-        let minutes = Self.sliderStops[index]
-        let parts = Self.hourMinuteParts(minutes)
+        let parts = Self.hourMinuteParts(Self.sliderStops[index])
         sliderHoursLabel.stringValue = parts.hours
         sliderMinutesLabel.stringValue = parts.minutes
         UserDefaults.standard.set(index, forKey: Self.sliderIndexKey)
+    }
 
-        // Continuous action fires throughout the drag; commit on release.
-        // A nil event covers programmatic/accessibility adjustment.
-        let event = NSApp.currentEvent
-        if event == nil || event?.type == .leftMouseUp || event?.type == .rightMouseUp {
-            keepAwake.activate(minutes: minutes)
-            statusItem.menu?.cancelTracking()
-        }
+    private func commitSliderSelection() {
+        let index = min(max(Int(durationSlider.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
+        keepAwake.activate(minutes: Self.sliderStops[index])
+        // The menu stays open — the header flips to the live countdown.
+    }
+
+    @objc private func timedFromMenu(_ sender: NSMenuItem) {
+        guard Self.sliderStops.indices.contains(sender.tag) else { return }
+        durationSlider.doubleValue = Double(sender.tag)
+        sliderChanged(durationSlider)  // sync preview labels + persisted index
+        keepAwake.activate(minutes: Self.sliderStops[sender.tag])
     }
 
     @objc private func deactivate() {
@@ -289,9 +325,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             sectionHeader.title = "Keeping Awake — Indefinitely"
         }
         if #available(macOS 14.4, *) {
-            sectionHeader.subtitle = active ? nil : "Your Mac will sleep as usual"
+            // Symmetric detail line in both states.
+            sectionHeader.subtitle = active
+                ? (keepAwake.allowDisplaySleep
+                    ? "Mac stays awake · display may sleep"
+                    : "Mac and display stay awake")
+                : offStateDetail()
         }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
+        for item in timedItems {
+            item.state = (active && keepAwake.sessionMinutes == Self.sliderStops[item.tag]) ? .on : .off
+        }
         if menuIsOpen {
             // Never add/remove rows mid-track — a session expiring with the
             // menu open would shift items under the cursor. Gray out in place.
@@ -305,6 +349,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lidBlockItem.state = lidBlocker.isEngaged ? .on : .off
         // Always leave an engaged block manually clearable.
         lidBlockItem.isEnabled = (active && PowerSource.isOnAC()) || lidBlocker.isEngaged
+    }
+
+    /// "Display sleeps in 42m · Mac sleeps in 55m" — live countdowns from the
+    /// active pmset profile and the current HID idle time; names the apps
+    /// holding the system awake when idle sleep is externally prevented.
+    private func offStateDetail() -> String {
+        let idle = SleepInfo.idleSeconds()
+        var parts: [String] = []
+        if sleepInfo.displaySleepMinutes > 0 {
+            let remaining = max(0, TimeInterval(sleepInfo.displaySleepMinutes * 60) - idle)
+            parts.append("Display sleeps in \(Self.format(remaining))")
+        } else {
+            parts.append("Display never sleeps")
+        }
+        if !sleepInfo.preventers.isEmpty {
+            parts.append("Mac held awake by \(sleepInfo.preventers.prefix(2).joined(separator: ", "))")
+        } else if sleepInfo.systemSleepMinutes > 0 {
+            let remaining = max(0, TimeInterval(sleepInfo.systemSleepMinutes * 60) - idle)
+            parts.append("Mac sleeps in \(Self.format(remaining))")
+        } else {
+            parts.append("Mac never idle-sleeps")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private static func format(_ interval: TimeInterval) -> String {
