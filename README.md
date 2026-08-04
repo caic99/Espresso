@@ -22,9 +22,10 @@ or Amphetamine, minus everything you don't need.
   on it shows the session countdown and the display policy.
 - **Keep Display Awake** (checked by default): uncheck to let the display
   sleep while the system stays awake (`caffeinate -i` behavior). Remembered.
-- **Block Lid-Close Sleep** (checked by default): while a session runs on AC
-  power, closing the lid doesn't sleep the Mac. Remembered; see the
-  guardrails below.
+- **Block Lid-Close Sleep** (checked by default): while a session runs — on
+  AC or battery — closing the lid doesn't sleep the Mac, so you can unplug
+  and carry it without dropping downloads or SSH sessions. Remembered; see
+  the guardrails below.
 - **Low Power Mode aware**: turning on Low Power Mode ends the running
   session — asking the Mac to conserve wins over keeping it awake.
   (Starting a session while Low Power Mode is already on still works.)
@@ -48,6 +49,8 @@ System Settings → General → Login Items.
 ```bash
 open build/Espresso.app --args --activate 30   # keep awake for 30 minutes
 open build/Espresso.app --args --activate      # keep awake indefinitely
+open build/Espresso.app --args --activate --no-block-lid   # session without the lid block
+open build/Espresso.app --args --activate --block-lid      # force the lid block even if unchecked
 ```
 
 Verify what Espresso is holding:
@@ -72,9 +75,13 @@ pmset -g | grep -E "sleep|SleepDisabled"
 The `SleepDisabled` flag is system-global and outlives the process, so
 Espresso is strict about it:
 
-- Engages **only while a session is running and on AC power**; disengages
-  the moment power is unplugged (re-engaging when plugged back in), when the
-  session ends, and when the app quits. It never engages on battery.
+- Engages only while a session is running; releases when the session ends,
+  when the app quits, and when **Low Power Mode** turns on (enabling Low
+  Power Mode ends the session). On battery the block stays armed by design —
+  that's the unplug-and-carry case — so a lid-closed Mac in a bag keeps
+  running until the session ends, you enable Low Power Mode, or the battery
+  reaches the OS's critical-level forced shutdown. Timed sessions and Low
+  Power Mode are your friends here.
 - Espresso only sets the flag when it can also *clear* it unattended: it
   requires passwordless `sudo -n` and never falls back to a password dialog
   that could go unanswered overnight. Without passwordless sudo it refuses,
