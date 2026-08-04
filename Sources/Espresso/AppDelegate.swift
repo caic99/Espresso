@@ -13,11 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var durationSlider: DurationSlider!
     private var sliderValueLabel: NSTextField!
     private var sleepInfo = SleepInfo.none
-    private var deactivateItem: NSMenuItem!
+    private var sessionToggleItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
     private var lidBlockItem: NSMenuItem!
     private var menuRefreshTimer: Timer?
-    private var menuIsOpen = false
 
     /// Snap points for the duration slider, in minutes (15 m – 24 h).
     /// Every stop is pure minutes or whole hours, so the value label is
@@ -84,21 +83,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sectionHeader.view = makeHeaderRow()
         menu.addItem(sectionHeader)
 
-        // Lives in the top session group; only visible while a session runs.
-        deactivateItem = NSMenuItem(title: "Deactivate",
-                                    action: #selector(deactivate),
-                                    keyEquivalent: "")
-        deactivateItem.target = self
-        deactivateItem.indentationLevel = 1
-        deactivateItem.image = NSImage(systemSymbolName: "stop.circle",
-                                       accessibilityDescription: "Deactivate")
-        menu.addItem(deactivateItem)
+        // Session toggle: "Keep Awake for <slider time>" when idle,
+        // "Deactivate" while running. ⌘C fires it while the menu is open.
+        sessionToggleItem = NSMenuItem(title: "Keep Awake",
+                                       action: #selector(toggleSession),
+                                       keyEquivalent: "c")
+        sessionToggleItem.target = self
+        menu.addItem(sessionToggleItem)
 
         indefiniteItem = NSMenuItem(title: "Indefinitely",
                                     action: #selector(activateIndefinitely),
                                     keyEquivalent: "")
         indefiniteItem.target = self
-        indefiniteItem.indentationLevel = 1
         indefiniteItem.image = NSImage(systemSymbolName: "infinity",
                                        accessibilityDescription: "Indefinitely")
         menu.addItem(indefiniteItem)
@@ -115,12 +111,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                       action: #selector(toggleDisplaySleep),
                                       keyEquivalent: "")
         displaySleepItem.target = self
+        displaySleepItem.image = NSImage(systemSymbolName: "display",
+                                         accessibilityDescription: "Display")
         menu.addItem(displaySleepItem)
 
         lidBlockItem = NSMenuItem(title: "Block Lid-Close Sleep",
                                   action: #selector(toggleLidBlock),
                                   keyEquivalent: "")
         lidBlockItem.target = self
+        lidBlockItem.image = NSImage(systemSymbolName: "laptopcomputer",
+                                     accessibilityDescription: "Lid")
         lidBlockItem.toolTip = "Keep the Mac awake with the lid closed during sessions "
             + "(on by default). Engages only on AC power and releases automatically "
             + "when the session ends, power is unplugged, or Espresso quits."
@@ -166,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeSliderRow() -> NSView {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 30))
 
         let defaults = UserDefaults.standard
         let stored = defaults.object(forKey: Self.sliderIndexKey) == nil
@@ -174,20 +174,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : defaults.integer(forKey: Self.sliderIndexKey)
         let index = min(max(stored, 0), Self.sliderStops.count - 1)
 
-        // Tickless capsule track (Control Center look); snapping happens in
-        // sliderChanged, keeping the row as short as a regular menu item.
         let slider = DurationSlider(value: Double(index), minValue: 0,
                                     maxValue: Double(Self.sliderStops.count - 1),
                                     target: self, action: #selector(sliderChanged(_:)))
         slider.onCommit = { [weak self] in self?.commitSliderSelection() }
+        slider.numberOfTickMarks = Self.sliderStops.count
+        slider.allowsTickMarkValuesOnly = true
         slider.isContinuous = true
         slider.controlSize = .small
-        slider.frame = NSRect(x: 22, y: 4, width: 190, height: 16)
+        slider.frame = NSRect(x: 22, y: 4, width: 190, height: 22)
         slider.setAccessibilityLabel("Keep awake duration")
         container.addSubview(slider)
 
         let label = Self.makeValueLabel(Self.durationLabel(Self.sliderStops[index]))
-        label.frame = NSRect(x: 216, y: 4, width: 36, height: 16)
+        label.frame = NSRect(x: 216, y: 7, width: 36, height: 16)
         container.addSubview(label)
 
         durationSlider = slider
@@ -209,8 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         sleepInfo = SleepInfo.current()
-        refreshUI()  // sync geometry (hidden rows) while still "closed"
-        menuIsOpen = true
+        refreshUI()
         // Keep the countdown live while the menu is held open. Must run in
         // .common mode: .default does not fire during menu tracking.
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -223,8 +222,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         menuRefreshTimer?.invalidate()
         menuRefreshTimer = nil
-        menuIsOpen = false
-        refreshUI()
     }
 
     // MARK: - Actions
@@ -237,9 +234,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// explicit end-of-gesture callback, never inferred from event state.
     @objc private func sliderChanged(_ sender: NSSlider) {
         let index = min(max(Int(sender.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
-        sender.doubleValue = Double(index)  // snap: no tick marks on the track
         sliderValueLabel.stringValue = Self.durationLabel(Self.sliderStops[index])
         UserDefaults.standard.set(index, forKey: Self.sliderIndexKey)
+        refreshUI()  // keep the "Keep Awake for …" toggle title in sync
     }
 
     private func commitSliderSelection() {
@@ -248,8 +245,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The menu stays open — the header flips to the live countdown.
     }
 
-    @objc private func deactivate() {
-        keepAwake.deactivate()
+    @objc private func toggleSession() {
+        if keepAwake.isActive {
+            keepAwake.deactivate()
+        } else {
+            commitSliderSelection()
+        }
     }
 
     @objc private func toggleDisplaySleep() {
@@ -356,13 +357,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 : "Mac held awake by " + sleepInfo.preventers.joined(separator: ", ")
         }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
-        if menuIsOpen {
-            // Never add/remove rows mid-track — a session expiring with the
-            // menu open would shift items under the cursor. Gray out in place.
-            deactivateItem.isEnabled = active
+        if active {
+            sessionToggleItem.title = "Deactivate"
+            sessionToggleItem.image = NSImage(systemSymbolName: "stop.circle",
+                                              accessibilityDescription: "Deactivate")
         } else {
-            deactivateItem.isEnabled = true
-            deactivateItem.isHidden = !active
+            let index = min(max(Int(durationSlider.doubleValue.rounded()), 0),
+                            Self.sliderStops.count - 1)
+            sessionToggleItem.title = "Keep Awake for \(Self.durationLabel(Self.sliderStops[index]))"
+            sessionToggleItem.image = NSImage(systemSymbolName: "play.circle",
+                                              accessibilityDescription: "Activate")
         }
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
