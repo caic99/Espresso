@@ -8,7 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sectionHeader: NSMenuItem!
     private var indefiniteItem: NSMenuItem!
     private var durationSlider: NSSlider!
-    private var sliderValueLabel: NSTextField!
+    private var sliderHoursLabel: NSTextField!
+    private var sliderMinutesLabel: NSTextField!
     private var deactivateItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
     private var lidBlockItem: NSMenuItem!
@@ -129,16 +130,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         slider.setAccessibilityLabel("Keep awake duration")
         container.addSubview(slider)
 
-        let label = NSTextField(labelWithString: Self.format(TimeInterval(Self.sliderStops[index] * 60)))
-        label.font = NSFont.menuFont(ofSize: 13)
-        label.textColor = .secondaryLabelColor
-        label.alignment = .right
-        label.frame = NSRect(x: 192, y: 7, width: 56, height: 16)
-        container.addSubview(label)
+        // Two fixed columns so hours and minutes stay aligned while dragging.
+        let parts = Self.hourMinuteParts(Self.sliderStops[index])
+        let hoursLabel = Self.makeValueLabel(parts.hours)
+        hoursLabel.frame = NSRect(x: 188, y: 7, width: 26, height: 16)
+        container.addSubview(hoursLabel)
+
+        let minutesLabel = Self.makeValueLabel(parts.minutes)
+        minutesLabel.frame = NSRect(x: 216, y: 7, width: 32, height: 16)
+        container.addSubview(minutesLabel)
 
         durationSlider = slider
-        sliderValueLabel = label
+        sliderHoursLabel = hoursLabel
+        sliderMinutesLabel = minutesLabel
         return container
+    }
+
+    private static func makeValueLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .right
+        return label
+    }
+
+    /// Splits a duration into fixed columns — ("", "45m"), ("1h", "30m"),
+    /// ("2h", "") — blank when the component is zero.
+    private static func hourMinuteParts(_ minutes: Int) -> (hours: String, minutes: String) {
+        let h = minutes / 60
+        let m = minutes % 60
+        return (h > 0 ? "\(h)h" : "", m > 0 ? "\(m)m" : "")
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -169,7 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func sliderChanged(_ sender: NSSlider) {
         let index = min(max(Int(sender.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
         let minutes = Self.sliderStops[index]
-        sliderValueLabel.stringValue = Self.format(TimeInterval(minutes * 60))
+        let parts = Self.hourMinuteParts(minutes)
+        sliderHoursLabel.stringValue = parts.hours
+        sliderMinutesLabel.stringValue = parts.minutes
         UserDefaults.standard.set(index, forKey: Self.sliderIndexKey)
 
         // Continuous action fires throughout the drag; commit on release.
