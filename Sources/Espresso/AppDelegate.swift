@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         container.addSubview(icon)
 
         let title = NSTextField(labelWithString: "")
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.font = .systemFont(ofSize: 13)
         title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail
         title.frame = NSRect(x: 38, y: 18, width: 214, height: 16)
