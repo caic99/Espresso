@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     keyEquivalent: "")
         deactivateItem.target = self
         deactivateItem.indentationLevel = 1
-        deactivateItem.image = NSImage(systemSymbolName: "moon.zzz",
+        deactivateItem.image = NSImage(systemSymbolName: "stop.circle",
                                        accessibilityDescription: "Deactivate")
         menu.addItem(deactivateItem)
 
@@ -267,6 +267,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                            accessibilityDescription: description)
         statusItem.button?.toolTip = description
 
+        // The header doubles as a state beacon: coffee when on, moon when off.
+        sectionHeader.image = NSImage(systemSymbolName: active ? "cup.and.saucer.fill" : "moon.zzz",
+                                      accessibilityDescription: active ? "Awake" : "Sleep allowed")
         if !active {
             sectionHeader.title = "Keep Awake For"
         } else if let remaining = keepAwake.remaining {
