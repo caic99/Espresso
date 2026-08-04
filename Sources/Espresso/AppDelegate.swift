@@ -25,6 +25,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let sliderStops = [15, 30, 45, 60, 120, 240, 480, 720, 1440]
     private static let sliderIndexKey = "sliderIndex"
     private static let defaultSliderIndex = 3  // 1 Hour
+    private static let blockLidSleepKey = "blockLidSleep"
+
+    /// Lid-close blocking during sessions is on unless the user unchecked it.
+    private var blockLidSleepPreferred: Bool {
+        UserDefaults.standard.object(forKey: Self.blockLidSleepKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: Self.blockLidSleepKey)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         lidBlocker.reconcileAtLaunch()
@@ -33,14 +41,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if !self.keepAwake.isActive {
                 self.disengageLidBlockOrWarn()
+            } else {
+                self.engageLidBlockIfAppropriate()
             }
             self.refreshUI()
         }
         powerSource.onChange = { [weak self] in
             guard let self else { return }
-            // Safety: never keep the lid block armed on battery.
+            // Safety: never keep the lid block armed on battery; rearm on AC.
             if !PowerSource.isOnAC() {
                 self.disengageLidBlockOrWarn()
+            } else {
+                self.engageLidBlockIfAppropriate()
             }
             self.sleepInfo = SleepInfo.current()  // AC/battery profiles differ
             self.refreshUI()
@@ -109,8 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   action: #selector(toggleLidBlock),
                                   keyEquivalent: "")
         lidBlockItem.target = self
-        lidBlockItem.toolTip = "Keep the Mac awake with the lid closed. Requires AC power; "
-            + "turns off automatically when the session ends or power is unplugged."
+        lidBlockItem.toolTip = "Keep the Mac awake with the lid closed during sessions "
+            + "(on by default). Engages only on AC power and releases automatically "
+            + "when the session ends, power is unplugged, or Espresso quits."
         menu.addItem(lidBlockItem)
         menu.addItem(.separator())
 
@@ -243,28 +256,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleLidBlock() {
-        if lidBlocker.isEngaged {
+        let displayedOn = keepAwake.isActive ? lidBlocker.isEngaged : blockLidSleepPreferred
+        let wantOn = !displayedOn
+        UserDefaults.standard.set(wantOn, forKey: Self.blockLidSleepKey)
+        if wantOn {
+            engageLidBlockIfAppropriate(interactive: true)
+        } else {
             disengageLidBlockOrWarn()
-        } else if keepAwake.isActive {
-            guard PowerSource.isOnAC() else {
+        }
+        refreshUI()
+    }
+
+    /// Engage the lid block when the preference, an active session, and AC
+    /// power line up. Alerts only on a user-initiated toggle; auto paths stay
+    /// quiet and the live checkmark reflects the truth instead.
+    private func engageLidBlockIfAppropriate(interactive: Bool = false) {
+        guard blockLidSleepPreferred, keepAwake.isActive, !lidBlocker.isEngaged else { return }
+        guard PowerSource.isOnAC() else {
+            if interactive {
                 showAlert("Connect to power first",
-                          "Blocking lid-close sleep on battery risks draining the battery "
-                          + "or overheating in a bag, so Espresso only allows it on AC power.")
-                return
+                          "Blocking lid-close sleep on battery risks draining the battery or "
+                          + "overheating in a bag. It will engage automatically on AC power.")
             }
-            if !lidBlocker.engage() {
+            return
+        }
+        if !lidBlocker.engage() {
+            if interactive {
                 showAlert("Passwordless sudo needed",
                           "Blocking lid-close sleep runs \"pmset disablesleep\" as root, and "
                           + "Espresso only engages it when it can also release it unattended "
                           + "(session end, unplug, quit). Set that up once in Terminal:\n\n"
                           + "echo \"$USER ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, "
                           + "/usr/bin/pmset disablesleep 1\" | sudo tee /etc/sudoers.d/espresso-lidsleep")
-            } else if !PowerSource.isOnAC() || !keepAwake.isActive {
-                // Guards changed while the privileged command ran.
-                lidBlocker.disengage()
             }
+        } else if !PowerSource.isOnAC() || !keepAwake.isActive {
+            // Guards changed while the privileged command ran.
+            lidBlocker.disengage()
         }
-        refreshUI()
     }
 
     private func disengageLidBlockOrWarn() {
@@ -337,9 +365,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
-        lidBlockItem.state = lidBlocker.isEngaged ? .on : .off
-        // Always leave an engaged block manually clearable.
-        lidBlockItem.isEnabled = (active && PowerSource.isOnAC()) || lidBlocker.isEngaged
+        // While a session runs, show the actual engagement; otherwise the
+        // preference (what the next session will do).
+        lidBlockItem.state = (active ? lidBlocker.isEngaged : blockLidSleepPreferred) ? .on : .off
     }
 
     /// "Display sleeps in 42m · Mac sleeps in 55m" — live countdowns from the

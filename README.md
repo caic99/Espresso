@@ -20,11 +20,13 @@ or Amphetamine, minus everything you don't need.
 - **Keep Display Awake** option (checked by default): uncheck it to let the
   display sleep while the system stays awake (`caffeinate -i` behavior).
   The choice is remembered across launches.
-- **Block Lid-Close Sleep** option (per-session): keeps the Mac awake even
-  with the lid closed, via the root-only `pmset disablesleep 1` flag — the
-  same mechanism as Amphetamine Enhancer's Closed-Display Mode. Guardrails:
-  only available while a session is active and on AC power, and it turns
-  itself off when the session ends, the app quits, or power is unplugged.
+- **Block Lid-Close Sleep** option (on by default, remembered): while a
+  session runs on AC power, the Mac stays awake even with the lid closed,
+  via the root-only `pmset disablesleep 1` flag — the same mechanism as
+  Amphetamine Enhancer's Closed-Display Mode. Guardrails: engages only on
+  AC power (re-engaging when you plug back in), and releases itself when
+  the session ends, the app quits, or power is unplugged. While a session
+  is active the checkmark shows the real engagement state.
 
 ## Build & run
 
