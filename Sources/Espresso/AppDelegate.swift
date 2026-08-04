@@ -166,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeSliderRow() -> NSView {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 30))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
 
         let defaults = UserDefaults.standard
         let stored = defaults.object(forKey: Self.sliderIndexKey) == nil
@@ -174,20 +174,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : defaults.integer(forKey: Self.sliderIndexKey)
         let index = min(max(stored, 0), Self.sliderStops.count - 1)
 
+        // Tickless capsule track (Control Center look); snapping happens in
+        // sliderChanged, keeping the row as short as a regular menu item.
         let slider = DurationSlider(value: Double(index), minValue: 0,
                                     maxValue: Double(Self.sliderStops.count - 1),
                                     target: self, action: #selector(sliderChanged(_:)))
         slider.onCommit = { [weak self] in self?.commitSliderSelection() }
-        slider.numberOfTickMarks = Self.sliderStops.count
-        slider.allowsTickMarkValuesOnly = true
         slider.isContinuous = true
         slider.controlSize = .small
-        slider.frame = NSRect(x: 22, y: 4, width: 190, height: 22)
+        slider.frame = NSRect(x: 22, y: 4, width: 190, height: 16)
         slider.setAccessibilityLabel("Keep awake duration")
         container.addSubview(slider)
 
         let label = Self.makeValueLabel(Self.durationLabel(Self.sliderStops[index]))
-        label.frame = NSRect(x: 216, y: 7, width: 36, height: 16)
+        label.frame = NSRect(x: 216, y: 4, width: 36, height: 16)
         container.addSubview(label)
 
         durationSlider = slider
@@ -237,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// explicit end-of-gesture callback, never inferred from event state.
     @objc private func sliderChanged(_ sender: NSSlider) {
         let index = min(max(Int(sender.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
+        sender.doubleValue = Double(index)  // snap: no tick marks on the track
         sliderValueLabel.stringValue = Self.durationLabel(Self.sliderStops[index])
         UserDefaults.standard.set(index, forKey: Self.sliderIndexKey)
     }

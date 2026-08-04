@@ -18,16 +18,22 @@ final class DurationSlider: NSSlider {
         }
     }
 
+    // Step exactly one stop per accessibility adjustment — the tickless
+    // track has no intrinsic step, so don't rely on NSSlider's default.
     override func accessibilityPerformIncrement() -> Bool {
-        let ok = super.accessibilityPerformIncrement()
-        if ok { scheduleAccessibilityCommit() }
-        return ok
+        stepByOne(1)
+        return true
     }
 
     override func accessibilityPerformDecrement() -> Bool {
-        let ok = super.accessibilityPerformDecrement()
-        if ok { scheduleAccessibilityCommit() }
-        return ok
+        stepByOne(-1)
+        return true
+    }
+
+    private func stepByOne(_ delta: Double) {
+        doubleValue = min(max((doubleValue + delta).rounded(), minValue), maxValue)
+        sendAction(action, to: target)
+        scheduleAccessibilityCommit()
     }
 
     private func scheduleAccessibilityCommit() {
