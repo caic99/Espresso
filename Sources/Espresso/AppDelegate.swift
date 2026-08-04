@@ -24,10 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        lidBlocker.reconcileAtLaunch()
         keepAwake.onChange = { [weak self] in
             guard let self else { return }
             if !self.keepAwake.isActive {
-                self.lidBlocker.disengage()
+                self.disengageLidBlockOrWarn()
             }
             self.refreshUI()
         }
@@ -35,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             // Safety: never keep the lid block armed on battery.
             if !PowerSource.isOnAC() {
-                self.lidBlocker.disengage()
+                self.disengageLidBlockOrWarn()
             }
             self.refreshUI()
         }
@@ -144,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleLidBlock() {
         if lidBlocker.isEngaged {
-            lidBlocker.disengage()
+            disengageLidBlockOrWarn()
         } else if keepAwake.isActive {
             guard PowerSource.isOnAC() else {
                 showAlert("Connect to power first",
@@ -153,12 +154,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             if !lidBlocker.engage() {
-                showAlert("Couldn't change the lid-sleep setting",
-                          "Espresso needs administrator privileges to run "
-                          + "\"pmset disablesleep\". The request was denied or cancelled.")
+                showAlert("Passwordless sudo needed",
+                          "Blocking lid-close sleep runs \"pmset disablesleep\" as root, and "
+                          + "Espresso only engages it when it can also release it unattended "
+                          + "(session end, unplug, quit). Set that up once in Terminal:\n\n"
+                          + "echo \"$USER ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, "
+                          + "/usr/bin/pmset disablesleep 1\" | sudo tee /etc/sudoers.d/espresso-lidsleep")
+            } else if !PowerSource.isOnAC() || !keepAwake.isActive {
+                // Guards changed while the privileged command ran.
+                lidBlocker.disengage()
             }
         }
         refreshUI()
+    }
+
+    private func disengageLidBlockOrWarn() {
+        if !lidBlocker.disengage() {
+            showAlert("Lid-sleep block is still on",
+                      "Espresso couldn't clear \"pmset disablesleep\". Run "
+                      + "\"sudo pmset disablesleep 0\" in Terminal to restore normal lid behavior.")
+        }
     }
 
     private func showAlert(_ message: String, _ informative: String) {
@@ -202,7 +217,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
         lidBlockItem.state = lidBlocker.isEngaged ? .on : .off
-        lidBlockItem.isEnabled = active && PowerSource.isOnAC()
+        // Always leave an engaged block manually clearable.
+        lidBlockItem.isEnabled = (active && PowerSource.isOnAC()) || lidBlocker.isEngaged
     }
 
     private static func format(_ interval: TimeInterval) -> String {
@@ -232,6 +248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         keepAwake.activate(minutes: minutes)
         if args.contains("--block-lid"), keepAwake.isActive, PowerSource.isOnAC() {
             lidBlocker.engage()
+            if !PowerSource.isOnAC() || !keepAwake.isActive {
+                lidBlocker.disengage()
+            }
         }
     }
 }

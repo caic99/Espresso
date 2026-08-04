@@ -53,12 +53,14 @@ pmset -g assertions | grep -A2 Espresso
   (as with `caffeinate`); the assertion prevents *idle* sleep only.
   Alternative that needs no software: macOS clamshell mode (external display
   + AC power + external keyboard/mouse).
-- Changing `disablesleep` requires root. Espresso first tries passwordless
-  `sudo -n`; if that fails it shows the standard macOS administrator dialog.
-  For prompt-free toggling, add a scoped sudoers rule:
+- Changing `disablesleep` requires root, and Espresso only engages the lid
+  block when it can also *release* it unattended (session end, unplug, quit)
+  — so it strictly uses passwordless `sudo -n`, never a password dialog that
+  could go unanswered overnight. If passwordless sudo isn't available, the
+  toggle refuses with instructions to add a scoped sudoers rule:
   `echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, /usr/bin/pmset disablesleep 1" | sudo tee /etc/sudoers.d/espresso-lidsleep`
 - The `SleepDisabled` flag is system-global. If Espresso is killed (not quit)
-  while the lid block is engaged, restore normal behavior with
-  `sudo pmset disablesleep 0` (a reboot also clears it).
+  while the lid block is engaged, it clears the leftover flag at next launch;
+  `sudo pmset disablesleep 0` (or a reboot) also restores normal behavior.
 - Quitting Espresso (or the session timer expiring) releases the assertion
   immediately.
