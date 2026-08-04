@@ -1,0 +1,144 @@
+import AppKit
+
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private let keepAwake = KeepAwake()
+    private var statusItem: NSStatusItem!
+    private var statusLine: NSMenuItem!
+    private var deactivateItem: NSMenuItem!
+    private var displaySleepItem: NSMenuItem!
+
+    private static let durations: [(title: String, minutes: Int?)] = [
+        ("Indefinitely", nil),
+        ("15 Minutes", 15),
+        ("30 Minutes", 30),
+        ("1 Hour", 60),
+        ("2 Hours", 120),
+        ("4 Hours", 240),
+    ]
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        keepAwake.onChange = { [weak self] in self?.refreshUI() }
+        buildStatusItem()
+        handleLaunchArguments()
+        refreshUI()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        keepAwake.deactivate()
+    }
+
+    // MARK: - Menu
+
+    private func buildStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+
+        let menu = NSMenu()
+        menu.delegate = self
+        menu.autoenablesItems = false
+
+        statusLine = NSMenuItem(title: "Espresso — Off", action: nil, keyEquivalent: "")
+        statusLine.isEnabled = false
+        menu.addItem(statusLine)
+        menu.addItem(.separator())
+
+        let header = NSMenuItem(title: "Keep Awake For", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        for (index, duration) in Self.durations.enumerated() {
+            let item = NSMenuItem(title: duration.title,
+                                  action: #selector(activateFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.indentationLevel = 1
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+
+        deactivateItem = NSMenuItem(title: "Deactivate",
+                                    action: #selector(deactivate),
+                                    keyEquivalent: "")
+        deactivateItem.target = self
+        menu.addItem(deactivateItem)
+        menu.addItem(.separator())
+
+        displaySleepItem = NSMenuItem(title: "Allow Display Sleep",
+                                      action: #selector(toggleDisplaySleep),
+                                      keyEquivalent: "")
+        displaySleepItem.target = self
+        menu.addItem(displaySleepItem)
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: "Quit Espresso",
+                              action: #selector(NSApplication.terminate(_:)),
+                              keyEquivalent: "q")
+        quit.target = NSApp
+        menu.addItem(quit)
+
+        statusItem.menu = menu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshUI()
+    }
+
+    // MARK: - Actions
+
+    @objc private func activateFromMenu(_ sender: NSMenuItem) {
+        guard Self.durations.indices.contains(sender.tag) else { return }
+        keepAwake.activate(minutes: Self.durations[sender.tag].minutes)
+    }
+
+    @objc private func deactivate() {
+        keepAwake.deactivate()
+    }
+
+    @objc private func toggleDisplaySleep() {
+        keepAwake.allowDisplaySleep.toggle()
+    }
+
+    // MARK: - UI state
+
+    private func refreshUI() {
+        let active = keepAwake.isActive
+        let symbol = active ? "cup.and.saucer.fill" : "cup.and.saucer"
+        let description = active ? "Espresso: keeping Mac awake" : "Espresso: inactive"
+        statusItem.button?.image = NSImage(systemSymbolName: symbol,
+                                           accessibilityDescription: description)
+        statusItem.button?.toolTip = description
+
+        if !active {
+            statusLine.title = "Espresso — Off"
+        } else if let remaining = keepAwake.remaining {
+            statusLine.title = "Espresso — On, \(Self.format(remaining)) left"
+        } else {
+            statusLine.title = "Espresso — On indefinitely"
+        }
+        deactivateItem.isEnabled = active
+        displaySleepItem.state = keepAwake.allowDisplaySleep ? .on : .off
+    }
+
+    private static func format(_ interval: TimeInterval) -> String {
+        let totalMinutes = Int(interval.rounded()) / 60
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours > 0 {
+            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+        }
+        return "\(max(minutes, 1))m"
+    }
+
+    // MARK: - Launch arguments
+
+    /// `--activate [minutes]` starts a session at launch (indefinite when no
+    /// valid minute count follows). Useful for scripting and testing.
+    private func handleLaunchArguments() {
+        let args = CommandLine.arguments
+        guard let flagIndex = args.firstIndex(of: "--activate") else { return }
+        var minutes: Int?
+        if args.indices.contains(flagIndex + 1) {
+            minutes = Int(args[flagIndex + 1])
+        }
+        keepAwake.activate(minutes: minutes)
+    }
+}
