@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     keyEquivalent: "")
         deactivateItem.target = self
         deactivateItem.indentationLevel = 1
+        deactivateItem.image = NSImage(systemSymbolName: "moon.zzz",
+                                       accessibilityDescription: "Deactivate")
         menu.addItem(deactivateItem)
 
         indefiniteItem = NSMenuItem(title: "Indefinitely",
@@ -76,6 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     keyEquivalent: "")
         indefiniteItem.target = self
         indefiniteItem.indentationLevel = 1
+        indefiniteItem.image = NSImage(systemSymbolName: "infinity",
+                                       accessibilityDescription: "Indefinitely")
         menu.addItem(indefiniteItem)
 
         // Timed sessions: a native slider snapping to sliderStops. Dragging
