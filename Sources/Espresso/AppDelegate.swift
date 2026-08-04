@@ -19,7 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var menuRefreshTimer: Timer?
     private var menuIsOpen = false
     private var autoEngageFailed = false
-    private var lidBlockSuppressedThisLaunch = false
+    private var engageFailureAlerted = false
+    private var lidBlockSuppressedThisSession = false
 
     /// Snap points for the duration slider, in minutes (15 m – 24 h).
     /// Every stop is pure minutes or whole hours, so the value label is
@@ -43,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if !self.keepAwake.isActive {
                 self.autoEngageFailed = false
+                self.engageFailureAlerted = false
+                self.lidBlockSuppressedThisSession = false
                 self.disengageLidBlockOrWarn()
             } else {
                 self.engageLidBlockIfAppropriate()
@@ -228,7 +231,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Actions
 
     @objc private func activateIndefinitely() {
-        keepAwake.activate(minutes: nil)
+        startSession(minutes: nil)
+    }
+
+    /// Restarting a session in place never passes through an inactive
+    /// onChange, so clear the per-session lid-block backoff here.
+    private func startSession(minutes: Int?) {
+        autoEngageFailed = false
+        engageFailureAlerted = false
+        keepAwake.activate(minutes: minutes)
     }
 
     /// Continuous action: preview only. The commit comes from DurationSlider's
@@ -242,7 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func commitSliderSelection() {
         let index = min(max(Int(durationSlider.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
-        keepAwake.activate(minutes: Self.sliderStops[index])
+        startSession(minutes: Self.sliderStops[index])
         // The menu stays open — the header flips to the live countdown.
     }
 
@@ -260,12 +271,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleLidBlock() {
         let engageWasFailing = autoEngageFailed
+        let failureWasAlerted = engageFailureAlerted
         autoEngageFailed = false
-        lidBlockSuppressedThisLaunch = false
+        engageFailureAlerted = false
+        lidBlockSuppressedThisSession = false
         let wantOn: Bool
-        if keepAwake.isActive, blockLidSleepPreferred, !lidBlocker.isEngaged, engageWasFailing {
-            // Preference is on but engagement keeps failing: treat the click
+        if keepAwake.isActive, blockLidSleepPreferred, !lidBlocker.isEngaged,
+           engageWasFailing, failureWasAlerted {
+            // The user has already seen the failure alert: treat the click
             // as clearing the preference instead of silently re-arming it.
+            // (After a silent auto failure, the click retries interactively
+            // so the sudo guidance surfaces immediately.)
             wantOn = false
         } else {
             let displayedOn = keepAwake.isActive ? lidBlocker.isEngaged : blockLidSleepPreferred
@@ -287,11 +303,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// failure, and the live checkmark reflects the truth instead.
     private func engageLidBlockIfAppropriate(interactive: Bool = false) {
         guard blockLidSleepPreferred, keepAwake.isActive, !lidBlocker.isEngaged,
-              !lidBlockSuppressedThisLaunch else { return }
+              !lidBlockSuppressedThisSession else { return }
         if !interactive && autoEngageFailed { return }
         if !lidBlocker.engage() {
+            // The session may have ended while the privileged command ran
+            // (waitUntilExit pumps the run loop): engage() then honored the
+            // latched disengage. Not a sudo failure — no backoff, no alert.
+            guard keepAwake.isActive else { return }
             autoEngageFailed = true
             if interactive {
+                engageFailureAlerted = true
                 showAlert("Passwordless sudo needed",
                           "Blocking lid-close sleep runs \"pmset disablesleep\" as root, and "
                           + "Espresso only engages it when it can also release it unattended "
@@ -428,21 +449,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// `--activate [minutes]` starts a session at launch (indefinite when no
     /// valid minute count follows). The default-on preference engages the
-    /// lid block with it; `--no-block-lid` suppresses that for this launch,
-    /// and `--block-lid` forces it even when the preference is off.
+    /// lid block with it; `--no-block-lid` suppresses that for the launched
+    /// session only, and `--block-lid` forces it even when the preference is
+    /// off.
     private func handleLaunchArguments() {
         let args = CommandLine.arguments
-        if args.contains("--no-block-lid") {
-            lidBlockSuppressedThisLaunch = true
-        }
         guard let flagIndex = args.firstIndex(of: "--activate") else { return }
+        if args.contains("--no-block-lid") {
+            lidBlockSuppressedThisSession = true  // cleared when the session ends
+        }
         var minutes: Int?
         if args.indices.contains(flagIndex + 1) {
             minutes = Int(args[flagIndex + 1])
         }
         keepAwake.activate(minutes: minutes)
         if args.contains("--block-lid"), keepAwake.isActive {
-            lidBlockSuppressedThisLaunch = false
+            lidBlockSuppressedThisSession = false
             lidBlocker.engage()
             if !keepAwake.isActive {
                 lidBlocker.disengage()
