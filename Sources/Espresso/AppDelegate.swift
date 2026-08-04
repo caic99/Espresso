@@ -259,17 +259,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - UI state
 
+    /// Prefers a newer symbol, degrading gracefully where the OS lacks it
+    /// (NSImage returns nil for unknown names) so the 13.0 target holds.
+    private static func symbolImage(_ preferred: String, fallback: String,
+                                    description: String) -> NSImage? {
+        NSImage(systemSymbolName: preferred, accessibilityDescription: description)
+            ?? NSImage(systemSymbolName: fallback, accessibilityDescription: description)
+    }
+
     private func refreshUI() {
         let active = keepAwake.isActive
-        let symbol = active ? "cup.and.saucer.fill" : "cup.and.saucer"
         let description = active ? "Espresso: keeping Mac awake" : "Espresso: inactive"
-        statusItem.button?.image = NSImage(systemSymbolName: symbol,
-                                           accessibilityDescription: description)
+        statusItem.button?.image = active
+            ? Self.symbolImage("cup.and.heat.waves.fill", fallback: "cup.and.saucer.fill",
+                               description: description)
+            : NSImage(systemSymbolName: "cup.and.saucer", accessibilityDescription: description)
         statusItem.button?.toolTip = description
 
-        // The header doubles as a state beacon: coffee when on, moon when off.
-        sectionHeader.image = NSImage(systemSymbolName: active ? "cup.and.saucer.fill" : "moon.zzz",
-                                      accessibilityDescription: active ? "Awake" : "Sleep allowed")
+        // The header doubles as a state beacon: steaming coffee when on, moon when off.
+        sectionHeader.image = active
+            ? Self.symbolImage("cup.and.heat.waves.fill", fallback: "cup.and.saucer.fill",
+                               description: "Awake")
+            : NSImage(systemSymbolName: "moon.zzz", accessibilityDescription: "Sleep allowed")
         if !active {
             sectionHeader.title = "Not Keeping Awake"
         } else if let remaining = keepAwake.remaining {
