@@ -326,12 +326,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             headerTitleLabel.stringValue = "Keeping Awake — Indefinitely"
         }
-        // Symmetric detail line in both states.
-        headerSubtitleLabel.stringValue = active
-            ? (keepAwake.allowDisplaySleep
+        // Symmetric detail line in both states, short enough to never truncate;
+        // app names live in the tooltip.
+        if active {
+            headerSubtitleLabel.stringValue = keepAwake.allowDisplaySleep
                 ? "Mac stays awake · display may sleep"
-                : "Mac and display stay awake")
-            : offStateDetail()
+                : "Mac and display stay awake"
+            headerSubtitleLabel.toolTip = nil
+        } else {
+            headerSubtitleLabel.stringValue = offStateDetail()
+            headerSubtitleLabel.toolTip = sleepInfo.preventers.isEmpty ? nil
+                : "Mac held awake by " + sleepInfo.preventers.joined(separator: ", ")
+        }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
         if menuIsOpen {
             // Never add/remove rows mid-track — a session expiring with the
@@ -361,12 +367,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             parts.append("Display never sleeps")
         }
         if !sleepInfo.preventers.isEmpty {
-            parts.append("Mac held awake by \(sleepInfo.preventers.prefix(2).joined(separator: ", "))")
+            parts.append("Mac kept awake")
         } else if sleepInfo.systemSleepMinutes > 0 {
             let remaining = max(0, TimeInterval(sleepInfo.systemSleepMinutes * 60) - idle)
-            parts.append("Mac sleeps in \(Self.format(remaining))")
+            parts.append("Mac in \(Self.format(remaining))")
         } else {
-            parts.append("Mac never idle-sleeps")
+            parts.append("Mac never sleeps")
         }
         return parts.joined(separator: " · ")
     }
