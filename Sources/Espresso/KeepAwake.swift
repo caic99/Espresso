@@ -14,6 +14,16 @@ final class KeepAwake {
         ) { [weak self] _ in
             self?.handleWake()
         }
+        // Honor Low Power Mode: enabling it means the user wants to conserve,
+        // so an active keep-awake session ends. Starting a session while LPM
+        // is already on remains allowed (explicit user intent).
+        NotificationCenter.default.addObserver(
+            forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isActive,
+                  ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
+            self.deactivate()
+        }
     }
 
     private var assertionID: IOPMAssertionID = 0

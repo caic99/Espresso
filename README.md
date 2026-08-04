@@ -25,6 +25,9 @@ or Amphetamine, minus everything you don't need.
 - **Block Lid-Close Sleep** (checked by default): while a session runs on AC
   power, closing the lid doesn't sleep the Mac. Remembered; see the
   guardrails below.
+- **Low Power Mode aware**: turning on Low Power Mode ends the running
+  session — asking the Mac to conserve wins over keeping it awake.
+  (Starting a session while Low Power Mode is already on still works.)
 
 ## Build & run
 
