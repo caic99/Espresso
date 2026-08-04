@@ -20,6 +20,9 @@ final class KeepAwake {
     private var timer: Timer?
     private(set) var endDate: Date?
     private(set) var isActive = false
+    /// Minute count the current session was started with; nil for indefinite
+    /// sessions or when inactive. Lets the menu checkmark the active duration.
+    private(set) var sessionMinutes: Int?
 
     /// Called on every state change so the UI can refresh.
     var onChange: (() -> Void)?
@@ -47,6 +50,7 @@ final class KeepAwake {
         if createAssertion() {
             isActive = true
             if let minutes, minutes > 0 {
+                sessionMinutes = minutes
                 let end = Date().addingTimeInterval(TimeInterval(minutes) * 60)
                 endDate = end
                 scheduleExpiry(at: end)
@@ -82,6 +86,7 @@ final class KeepAwake {
         timer?.invalidate()
         timer = nil
         endDate = nil
+        sessionMinutes = nil
         if isActive {
             IOPMAssertionRelease(assertionID)
             assertionID = 0

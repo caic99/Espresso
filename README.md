@@ -6,11 +6,13 @@ or Amphetamine, minus everything you don't need.
 - Native `NSStatusItem` + `NSMenu` in the menu bar (SF Symbol cup icon,
   filled while active). No Dock icon, no windows.
 - Keep-awake sessions: indefinitely, or 15 min / 30 min / 1 h / 2 h / 4 h.
-  Timed sessions deactivate themselves; the menu shows time remaining.
+  Timed sessions deactivate themselves. The menu header shows a live
+  countdown, the active duration gets a checkmark, and **Deactivate**
+  appears only while a session runs.
 - Uses a native IOKit power assertion (`PreventUserIdleDisplaySleep`,
   the same mechanism as `caffeinate -d`) — no subprocesses.
-- **Allow Display Sleep** option: when checked, only system idle sleep is
-  prevented and the display may still turn off (`caffeinate -i` behavior).
+- **Keep Display Awake** option (checked by default): uncheck it to let the
+  display sleep while the system stays awake (`caffeinate -i` behavior).
   The choice is remembered across launches.
 
 ## Build & run

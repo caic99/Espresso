@@ -3,10 +3,13 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let keepAwake = KeepAwake()
     private var statusItem: NSStatusItem!
-    private var statusLine: NSMenuItem!
+    private var sectionHeader: NSMenuItem!
+    private var durationItems: [NSMenuItem] = []
+    private var deactivateSeparator: NSMenuItem!
     private var deactivateItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
     private var menuRefreshTimer: Timer?
+    private var menuIsOpen = false
 
     private static let durations: [(title: String, minutes: Int?)] = [
         ("Indefinitely", nil),
@@ -37,14 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false
 
-        statusLine = NSMenuItem(title: "Espresso — Off", action: nil, keyEquivalent: "")
-        statusLine.isEnabled = false
-        menu.addItem(statusLine)
-        menu.addItem(.separator())
-
-        let header = NSMenuItem(title: "Keep Awake For", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
+        // Single header line: section label when off, live status when on.
+        sectionHeader = NSMenuItem(title: "Keep Awake For", action: nil, keyEquivalent: "")
+        sectionHeader.isEnabled = false
+        menu.addItem(sectionHeader)
         for (index, duration) in Self.durations.enumerated() {
             let item = NSMenuItem(title: duration.title,
                                   action: #selector(activateFromMenu(_:)),
@@ -53,9 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.tag = index
             item.indentationLevel = 1
             menu.addItem(item)
+            durationItems.append(item)
         }
-        menu.addItem(.separator())
 
+        // Deactivate (and its separator) only exist visually while a session runs.
+        deactivateSeparator = .separator()
+        menu.addItem(deactivateSeparator)
         deactivateItem = NSMenuItem(title: "Deactivate",
                                     action: #selector(deactivate),
                                     keyEquivalent: "")
@@ -63,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(deactivateItem)
         menu.addItem(.separator())
 
-        displaySleepItem = NSMenuItem(title: "Allow Display Sleep",
+        displaySleepItem = NSMenuItem(title: "Keep Display Awake",
                                       action: #selector(toggleDisplaySleep),
                                       keyEquivalent: "")
         displaySleepItem.target = self
@@ -80,7 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        refreshUI()
+        refreshUI()  // sync geometry (hidden rows) while still "closed"
+        menuIsOpen = true
         // Keep the countdown live while the menu is held open. Must run in
         // .common mode: .default does not fire during menu tracking.
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -93,6 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         menuRefreshTimer?.invalidate()
         menuRefreshTimer = nil
+        menuIsOpen = false
+        refreshUI()
     }
 
     // MARK: - Actions
@@ -121,14 +126,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.toolTip = description
 
         if !active {
-            statusLine.title = "Espresso — Off"
+            sectionHeader.title = "Keep Awake For"
         } else if let remaining = keepAwake.remaining {
-            statusLine.title = "Espresso — On, \(Self.format(remaining)) left"
+            sectionHeader.title = "Keeping Awake — \(Self.format(remaining)) left"
         } else {
-            statusLine.title = "Espresso — On indefinitely"
+            sectionHeader.title = "Keeping Awake — Indefinitely"
         }
-        deactivateItem.isEnabled = active
-        displaySleepItem.state = keepAwake.allowDisplaySleep ? .on : .off
+        for (index, item) in durationItems.enumerated() {
+            let isCurrent = active && Self.durations[index].minutes == keepAwake.sessionMinutes
+            item.state = isCurrent ? .on : .off
+        }
+        if menuIsOpen {
+            // Never add/remove rows mid-track — a session expiring with the
+            // menu open would shift items under the cursor. Gray out in place.
+            deactivateItem.isEnabled = active
+        } else {
+            deactivateItem.isEnabled = true
+            deactivateItem.isHidden = !active
+            deactivateSeparator.isHidden = !active
+        }
+        // Positive framing: checked means the display is kept on.
+        displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
     }
 
     private static func format(_ interval: TimeInterval) -> String {
