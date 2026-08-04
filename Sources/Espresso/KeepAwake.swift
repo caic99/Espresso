@@ -1,9 +1,20 @@
-import Foundation
+import AppKit
 import IOKit.pwr_mgt
 
 /// Owns the IOKit power assertion and the optional session-expiry timer.
 final class KeepAwake {
     static let allowDisplaySleepKey = "allowDisplaySleep"
+
+    init() {
+        // The assertion only blocks *idle* sleep; the Mac can still be put to
+        // sleep manually mid-session, and the CFRunLoopTimer deadline does not
+        // advance during sleep on Intel. Re-check the wall clock at wake.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.handleWake()
+        }
+    }
 
     private var assertionID: IOPMAssertionID = 0
     private var timer: Timer?
@@ -38,11 +49,7 @@ final class KeepAwake {
             if let minutes, minutes > 0 {
                 let end = Date().addingTimeInterval(TimeInterval(minutes) * 60)
                 endDate = end
-                let t = Timer(fire: end, interval: 0, repeats: false) { [weak self] _ in
-                    self?.deactivate()
-                }
-                RunLoop.main.add(t, forMode: .common)
-                timer = t
+                scheduleExpiry(at: end)
             }
         }
         onChange?()
@@ -51,6 +58,24 @@ final class KeepAwake {
     func deactivate() {
         releaseSession()
         onChange?()
+    }
+
+    private func scheduleExpiry(at end: Date) {
+        timer?.invalidate()
+        let t = Timer(fire: end, interval: 0, repeats: false) { [weak self] _ in
+            self?.deactivate()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func handleWake() {
+        guard isActive, let endDate else { return }
+        if endDate.timeIntervalSinceNow <= 0 {
+            deactivate()
+        } else {
+            scheduleExpiry(at: endDate)
+        }
     }
 
     private func releaseSession() {

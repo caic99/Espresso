@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusLine: NSMenuItem!
     private var deactivateItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
+    private var menuRefreshTimer: Timer?
 
     private static let durations: [(title: String, minutes: Int?)] = [
         ("Indefinitely", nil),
@@ -80,6 +81,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         refreshUI()
+        // Keep the countdown live while the menu is held open. Must run in
+        // .common mode: .default does not fire during menu tracking.
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            self?.refreshUI()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        menuRefreshTimer = t
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuRefreshTimer?.invalidate()
+        menuRefreshTimer = nil
     }
 
     // MARK: - Actions
@@ -119,13 +132,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private static func format(_ interval: TimeInterval) -> String {
-        let totalMinutes = Int(interval.rounded()) / 60
+        // Round up so remaining time is never understated ("1m" means at most
+        // one minute truly remains).
+        let totalMinutes = max(1, Int((interval / 60).rounded(.up)))
         let hours = totalMinutes / 60
         let minutes = totalMinutes % 60
         if hours > 0 {
             return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
         }
-        return "\(max(minutes, 1))m"
+        return "\(minutes)m"
     }
 
     // MARK: - Launch arguments
