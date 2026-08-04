@@ -119,8 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   action: #selector(toggleLidBlock),
                                   keyEquivalent: "")
         lidBlockItem.target = self
-        lidBlockItem.image = NSImage(systemSymbolName: "laptopcomputer",
-                                     accessibilityDescription: "Lid")
+        lidBlockItem.image = Self.symbolImage("macbook", fallback: "laptopcomputer",
+                                              description: "Lid")
         lidBlockItem.toolTip = "Keep the Mac awake with the lid closed during sessions "
             + "(on by default). Engages only on AC power and releases automatically "
             + "when the session ends, power is unplugged, or Espresso quits."
