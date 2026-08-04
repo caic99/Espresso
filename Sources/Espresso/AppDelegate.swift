@@ -6,22 +6,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let powerSource = PowerSource()
     private var statusItem: NSStatusItem!
     private var sectionHeader: NSMenuItem!
-    private var durationItems: [NSMenuItem] = []
-    private var deactivateSeparator: NSMenuItem!
+    private var indefiniteItem: NSMenuItem!
+    private var durationSlider: NSSlider!
+    private var sliderValueLabel: NSTextField!
     private var deactivateItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
     private var lidBlockItem: NSMenuItem!
     private var menuRefreshTimer: Timer?
     private var menuIsOpen = false
 
-    private static let durations: [(title: String, minutes: Int?)] = [
-        ("Indefinitely", nil),
-        ("15 Minutes", 15),
-        ("30 Minutes", 30),
-        ("1 Hour", 60),
-        ("2 Hours", 120),
-        ("4 Hours", 240),
-    ]
+    /// Snap points for the duration slider, in minutes (15 m – 8 h).
+    private static let sliderStops = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480]
+    private static let sliderIndexKey = "sliderIndex"
+    private static let defaultSliderIndex = 3  // 1 Hour
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         lidBlocker.reconcileAtLaunch()
@@ -64,25 +61,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sectionHeader = NSMenuItem(title: "Keep Awake For", action: nil, keyEquivalent: "")
         sectionHeader.isEnabled = false
         menu.addItem(sectionHeader)
-        for (index, duration) in Self.durations.enumerated() {
-            let item = NSMenuItem(title: duration.title,
-                                  action: #selector(activateFromMenu(_:)),
-                                  keyEquivalent: "")
-            item.target = self
-            item.tag = index
-            item.indentationLevel = 1
-            menu.addItem(item)
-            durationItems.append(item)
-        }
 
-        // Deactivate (and its separator) only exist visually while a session runs.
-        deactivateSeparator = .separator()
-        menu.addItem(deactivateSeparator)
+        // Lives in the top session group; only visible while a session runs.
         deactivateItem = NSMenuItem(title: "Deactivate",
                                     action: #selector(deactivate),
                                     keyEquivalent: "")
         deactivateItem.target = self
+        deactivateItem.indentationLevel = 1
         menu.addItem(deactivateItem)
+
+        indefiniteItem = NSMenuItem(title: "Indefinitely",
+                                    action: #selector(activateIndefinitely),
+                                    keyEquivalent: "")
+        indefiniteItem.target = self
+        indefiniteItem.indentationLevel = 1
+        menu.addItem(indefiniteItem)
+
+        // Timed sessions: a native slider snapping to sliderStops. Dragging
+        // previews the duration in the trailing label; releasing starts the
+        // session and closes the menu.
+        let sliderItem = NSMenuItem()
+        sliderItem.view = makeSliderRow()
+        menu.addItem(sliderItem)
         menu.addItem(.separator())
 
         displaySleepItem = NSMenuItem(title: "Keep Display Awake",
@@ -109,6 +109,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
     }
 
+    private func makeSliderRow() -> NSView {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 30))
+
+        let defaults = UserDefaults.standard
+        let stored = defaults.object(forKey: Self.sliderIndexKey) == nil
+            ? Self.defaultSliderIndex
+            : defaults.integer(forKey: Self.sliderIndexKey)
+        let index = min(max(stored, 0), Self.sliderStops.count - 1)
+
+        let slider = NSSlider(value: Double(index), minValue: 0,
+                              maxValue: Double(Self.sliderStops.count - 1),
+                              target: self, action: #selector(sliderChanged(_:)))
+        slider.numberOfTickMarks = Self.sliderStops.count
+        slider.allowsTickMarkValuesOnly = true
+        slider.isContinuous = true
+        slider.controlSize = .small
+        slider.frame = NSRect(x: 22, y: 4, width: 164, height: 22)
+        slider.setAccessibilityLabel("Keep awake duration")
+        container.addSubview(slider)
+
+        let label = NSTextField(labelWithString: Self.format(TimeInterval(Self.sliderStops[index] * 60)))
+        label.font = NSFont.menuFont(ofSize: 13)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .right
+        label.frame = NSRect(x: 192, y: 7, width: 56, height: 16)
+        container.addSubview(label)
+
+        durationSlider = slider
+        sliderValueLabel = label
+        return container
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
         refreshUI()  // sync geometry (hidden rows) while still "closed"
         menuIsOpen = true
@@ -130,9 +162,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Actions
 
-    @objc private func activateFromMenu(_ sender: NSMenuItem) {
-        guard Self.durations.indices.contains(sender.tag) else { return }
-        keepAwake.activate(minutes: Self.durations[sender.tag].minutes)
+    @objc private func activateIndefinitely() {
+        keepAwake.activate(minutes: nil)
+    }
+
+    @objc private func sliderChanged(_ sender: NSSlider) {
+        let index = min(max(Int(sender.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
+        let minutes = Self.sliderStops[index]
+        sliderValueLabel.stringValue = Self.format(TimeInterval(minutes * 60))
+        UserDefaults.standard.set(index, forKey: Self.sliderIndexKey)
+
+        // Continuous action fires throughout the drag; commit on release.
+        // A nil event covers programmatic/accessibility adjustment.
+        let event = NSApp.currentEvent
+        if event == nil || event?.type == .leftMouseUp || event?.type == .rightMouseUp {
+            keepAwake.activate(minutes: minutes)
+            statusItem.menu?.cancelTracking()
+        }
     }
 
     @objc private func deactivate() {
@@ -201,10 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             sectionHeader.title = "Keeping Awake — Indefinitely"
         }
-        for (index, item) in durationItems.enumerated() {
-            let isCurrent = active && Self.durations[index].minutes == keepAwake.sessionMinutes
-            item.state = isCurrent ? .on : .off
-        }
+        indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
         if menuIsOpen {
             // Never add/remove rows mid-track — a session expiring with the
             // menu open would shift items under the cursor. Gray out in place.
@@ -212,7 +255,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             deactivateItem.isEnabled = true
             deactivateItem.isHidden = !active
-            deactivateSeparator.isHidden = !active
         }
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
