@@ -94,3 +94,7 @@ Espresso is strict about it:
   keyboard/mouse) needs no software at all.
 - The menu screenshot above is rendered from the app's own UI components;
   your menu may differ slightly by macOS version.
+
+## License
+
+MIT

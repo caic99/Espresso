@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Build app bundle
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags needed: make-app.sh derives the version from git describe
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Assemble .app bundle
+        run: ./make-app.sh
+
+      - name: Verify bundle
+        run: |
+          test -x build/Espresso.app/Contents/MacOS/Espresso
+          plutil -lint build/Espresso.app/Contents/Info.plist
+          codesign --verify --verbose build/Espresso.app
+
+      - name: Zip app
+        run: ditto -c -k --keepParent build/Espresso.app build/Espresso.app.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Espresso.app
+          path: build/Espresso.app.zip
+          retention-days: 14
