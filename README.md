@@ -6,10 +6,16 @@ or Amphetamine, minus everything you don't need.
 - Native `NSStatusItem` + `NSMenu` in the menu bar (SF Symbol cup icon,
   filled while active). No Dock icon, no windows.
 - Keep-awake sessions: indefinitely, or timed via a native slider
-  (15 min – 8 h, snapping to sensible stops; drag to preview, release to
-  start; your last position is remembered). Timed sessions deactivate
-  themselves. The menu header shows a live countdown, and **Deactivate**
-  appears at the top of the session group only while a session runs.
+  (15 min – 8 h, snapping to sensible stops; drag to preview, release on a
+  new stop to start — the menu stays open and the header flips to the live
+  countdown; your last position is remembered). A **Timed** submenu offers
+  the same stops for keyboard and VoiceOver use. Timed sessions deactivate
+  themselves, and **Deactivate** appears at the top of the session group
+  only while a session runs.
+- The status header always explains the current state: while off it shows
+  live "Display sleeps in … · Mac sleeps in …" countdowns from your actual
+  power settings (naming other apps if they're holding the Mac awake);
+  while on it shows the session countdown and the display policy.
 - Uses a native IOKit power assertion (`PreventUserIdleDisplaySleep`,
   the same mechanism as `caffeinate -d`) — no subprocesses.
 - **Keep Display Awake** option (checked by default): uncheck it to let the
