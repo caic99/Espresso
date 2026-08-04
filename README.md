@@ -3,40 +3,37 @@
 A tiny native macOS menu bar app that keeps your Mac awake — like `caffeinate`
 or Amphetamine, minus everything you don't need.
 
-- Native `NSStatusItem` + `NSMenu` in the menu bar (SF Symbol cup icon,
-  filled while active). No Dock icon, no windows.
-- Keep-awake sessions: indefinitely, or timed via a native slider
-  (15 min – 24 h, snapping to sensible stops; drag to preview, release on a
-  new stop to start — the menu stays open and the header flips to the live
-  countdown; your last position is remembered). Timed sessions deactivate
-  themselves, and **Deactivate** appears at the top of the session group
-  only while a session runs.
-- The status header always explains the current state: while off it shows
-  live "Display sleeps in … · Mac sleeps in …" countdowns from your actual
-  power settings (naming other apps if they're holding the Mac awake);
-  while on it shows the session countdown and the display policy.
-- Uses a native IOKit power assertion (`PreventUserIdleDisplaySleep`,
-  the same mechanism as `caffeinate -d`) — no subprocesses.
-- **Keep Display Awake** option (checked by default): uncheck it to let the
-  display sleep while the system stays awake (`caffeinate -i` behavior).
-  The choice is remembered across launches.
-- **Block Lid-Close Sleep** option (on by default, remembered): while a
-  session runs on AC power, the Mac stays awake even with the lid closed,
-  via the root-only `pmset disablesleep 1` flag — the same mechanism as
-  Amphetamine Enhancer's Closed-Display Mode. Guardrails: engages only on
-  AC power (re-engaging when you plug back in), and releases itself when
-  the session ends, the app quits, or power is unplugged. While a session
-  is active the checkmark shows the real engagement state.
+![Espresso's menu, idle (left) and with a 2-hour session running (right)](docs/screenshot.png)
+
+## Features
+
+- **Native everything**: an `NSStatusItem` in the menu bar (steaming-cup SF
+  Symbol while active) with a real `NSMenu` — no Dock icon, no windows,
+  no Electron, no subprocesses. One ~1 MB binary.
+- **Sessions**: keep the Mac awake indefinitely, or drag the slider to a
+  timed session (15 min – 24 h; drag to preview, release to start — the menu
+  stays open and the header flips to a live countdown). Timed sessions end
+  themselves; the last slider position is remembered.
+- **Honest status header**: while off it shows live "Display sleeps in … ·
+  Mac in …" countdowns computed from your actual power settings — and names
+  the apps (in a tooltip) if something else is holding the Mac awake. While
+  on it shows the session countdown and the display policy.
+- **Keep Display Awake** (checked by default): uncheck to let the display
+  sleep while the system stays awake (`caffeinate -i` behavior). Remembered.
+- **Block Lid-Close Sleep** (checked by default): while a session runs on AC
+  power, closing the lid doesn't sleep the Mac. Remembered; see the
+  guardrails below.
 
 ## Build & run
+
+Requires macOS 13+ and the Xcode command line tools.
 
 ```bash
 ./make-app.sh
 open build/Espresso.app
 ```
 
-Requires macOS 13+ and Xcode command line tools. The bundle is ad-hoc signed.
-To start it at login, add the app in
+The bundle is ad-hoc signed. To start Espresso at login, add it in
 System Settings → General → Login Items.
 
 ## Scripting
@@ -46,29 +43,52 @@ System Settings → General → Login Items.
 ```bash
 open build/Espresso.app --args --activate 30   # keep awake for 30 minutes
 open build/Espresso.app --args --activate      # keep awake indefinitely
-open build/Espresso.app --args --activate --block-lid   # also block lid-close sleep
 ```
 
-Verify the assertion is held:
+Verify what Espresso is holding:
 
 ```bash
-pmset -g assertions | grep -A2 Espresso
+pmset -g assertions | grep Espresso
+pmset -g | grep -E "sleep|SleepDisabled"
 ```
+
+## How it works
+
+- Keeping awake is a single IOKit power assertion
+  (`PreventUserIdleDisplaySleep`, or `PreventUserIdleSystemSleep` when the
+  display is allowed to sleep) — exactly what `caffeinate` uses. It blocks
+  *idle* sleep only and is released the instant the session ends.
+- Lid-close sleep is a *forced* sleep no assertion can veto, so **Block
+  Lid-Close Sleep** uses the root-only global flag `pmset disablesleep 1` —
+  the same mechanism as Amphetamine Enhancer's Closed-Display Mode.
+
+## Lid-block guardrails
+
+The `SleepDisabled` flag is system-global and outlives the process, so
+Espresso is strict about it:
+
+- Engages **only while a session is running and on AC power**; disengages
+  the moment power is unplugged (re-engaging when plugged back in), when the
+  session ends, and when the app quits. It never engages on battery.
+- Espresso only sets the flag when it can also *clear* it unattended: it
+  requires passwordless `sudo -n` and never falls back to a password dialog
+  that could go unanswered overnight. Without passwordless sudo it refuses,
+  with instructions to add a scoped rule:
+
+  ```bash
+  echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, /usr/bin/pmset disablesleep 1" | sudo tee /etc/sudoers.d/espresso-lidsleep
+  ```
+
+- If Espresso is killed un-cleanly while engaged, it clears the leftover
+  flag at next launch; `sudo pmset disablesleep 0` (or a reboot) also
+  restores normal lid behavior.
+- While a session is active the menu checkmark shows the *actual*
+  engagement state, so a failed engage is visible, never assumed.
 
 ## Notes
 
-- Without **Block Lid-Close Sleep**, closing the lid still sleeps the Mac
-  (as with `caffeinate`); the assertion prevents *idle* sleep only.
-  Alternative that needs no software: macOS clamshell mode (external display
-  + AC power + external keyboard/mouse).
-- Changing `disablesleep` requires root, and Espresso only engages the lid
-  block when it can also *release* it unattended (session end, unplug, quit)
-  — so it strictly uses passwordless `sudo -n`, never a password dialog that
-  could go unanswered overnight. If passwordless sudo isn't available, the
-  toggle refuses with instructions to add a scoped sudoers rule:
-  `echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, /usr/bin/pmset disablesleep 1" | sudo tee /etc/sudoers.d/espresso-lidsleep`
-- The `SleepDisabled` flag is system-global. If Espresso is killed (not quit)
-  while the lid block is engaged, it clears the leftover flag at next launch;
-  `sudo pmset disablesleep 0` (or a reboot) also restores normal behavior.
-- Quitting Espresso (or the session timer expiring) releases the assertion
-  immediately.
+- Without the lid block, closing the lid sleeps the Mac (as with
+  `caffeinate`). macOS clamshell mode (external display + AC + external
+  keyboard/mouse) needs no software at all.
+- The menu screenshot above is rendered from the app's own UI components;
+  your menu may differ slightly by macOS version.
