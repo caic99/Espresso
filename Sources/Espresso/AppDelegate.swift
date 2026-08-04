@@ -20,8 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var menuRefreshTimer: Timer?
     private var menuIsOpen = false
 
-    /// Snap points for the duration slider, in minutes (15 m – 8 h).
-    private static let sliderStops = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480]
+    /// Snap points for the duration slider, in minutes (15 m – 24 h).
+    private static let sliderStops = [15, 30, 45, 60, 90, 120, 240, 480, 720, 1440]
     private static let sliderIndexKey = "sliderIndex"
     private static let defaultSliderIndex = 3  // 1 Hour
 
