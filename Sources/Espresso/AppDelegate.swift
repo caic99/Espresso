@@ -2,12 +2,15 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let keepAwake = KeepAwake()
+    private let lidBlocker = LidSleepBlocker()
+    private let powerSource = PowerSource()
     private var statusItem: NSStatusItem!
     private var sectionHeader: NSMenuItem!
     private var durationItems: [NSMenuItem] = []
     private var deactivateSeparator: NSMenuItem!
     private var deactivateItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
+    private var lidBlockItem: NSMenuItem!
     private var menuRefreshTimer: Timer?
     private var menuIsOpen = false
 
@@ -21,13 +24,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        keepAwake.onChange = { [weak self] in self?.refreshUI() }
+        keepAwake.onChange = { [weak self] in
+            guard let self else { return }
+            if !self.keepAwake.isActive {
+                self.lidBlocker.disengage()
+            }
+            self.refreshUI()
+        }
+        powerSource.onChange = { [weak self] in
+            guard let self else { return }
+            // Safety: never keep the lid block armed on battery.
+            if !PowerSource.isOnAC() {
+                self.lidBlocker.disengage()
+            }
+            self.refreshUI()
+        }
+        powerSource.startObserving()
         buildStatusItem()
         handleLaunchArguments()
         refreshUI()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        lidBlocker.disengage()
         keepAwake.deactivate()
     }
 
@@ -70,6 +89,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                       keyEquivalent: "")
         displaySleepItem.target = self
         menu.addItem(displaySleepItem)
+
+        lidBlockItem = NSMenuItem(title: "Block Lid-Close Sleep",
+                                  action: #selector(toggleLidBlock),
+                                  keyEquivalent: "")
+        lidBlockItem.target = self
+        lidBlockItem.toolTip = "Keep the Mac awake with the lid closed. Requires AC power; "
+            + "turns off automatically when the session ends or power is unplugged."
+        menu.addItem(lidBlockItem)
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit Espresso",
@@ -115,6 +142,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         keepAwake.allowDisplaySleep.toggle()
     }
 
+    @objc private func toggleLidBlock() {
+        if lidBlocker.isEngaged {
+            lidBlocker.disengage()
+        } else if keepAwake.isActive {
+            guard PowerSource.isOnAC() else {
+                showAlert("Connect to power first",
+                          "Blocking lid-close sleep on battery risks draining the battery "
+                          + "or overheating in a bag, so Espresso only allows it on AC power.")
+                return
+            }
+            if !lidBlocker.engage() {
+                showAlert("Couldn't change the lid-sleep setting",
+                          "Espresso needs administrator privileges to run "
+                          + "\"pmset disablesleep\". The request was denied or cancelled.")
+            }
+        }
+        refreshUI()
+    }
+
+    private func showAlert(_ message: String, _ informative: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = informative
+        alert.runModal()
+    }
+
     // MARK: - UI state
 
     private func refreshUI() {
@@ -147,6 +201,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
+        lidBlockItem.state = lidBlocker.isEngaged ? .on : .off
+        lidBlockItem.isEnabled = active && PowerSource.isOnAC()
     }
 
     private static func format(_ interval: TimeInterval) -> String {
@@ -164,7 +220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Launch arguments
 
     /// `--activate [minutes]` starts a session at launch (indefinite when no
-    /// valid minute count follows). Useful for scripting and testing.
+    /// valid minute count follows); adding `--block-lid` also engages the
+    /// lid-close block (AC power required). Useful for scripting and testing.
     private func handleLaunchArguments() {
         let args = CommandLine.arguments
         guard let flagIndex = args.firstIndex(of: "--activate") else { return }
@@ -173,5 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             minutes = Int(args[flagIndex + 1])
         }
         keepAwake.activate(minutes: minutes)
+        if args.contains("--block-lid"), keepAwake.isActive, PowerSource.isOnAC() {
+            lidBlocker.engage()
+        }
     }
 }
