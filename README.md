@@ -8,8 +8,7 @@ or Amphetamine, minus everything you don't need.
 - Keep-awake sessions: indefinitely, or timed via a native slider
   (15 min – 8 h, snapping to sensible stops; drag to preview, release on a
   new stop to start — the menu stays open and the header flips to the live
-  countdown; your last position is remembered). A **Timed** submenu offers
-  the same stops for keyboard and VoiceOver use. Timed sessions deactivate
+  countdown; your last position is remembered). Timed sessions deactivate
   themselves, and **Deactivate** appears at the top of the session group
   only while a session runs.
 - The status header always explains the current state: while off it shows

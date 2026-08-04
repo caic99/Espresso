@@ -6,11 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let powerSource = PowerSource()
     private var statusItem: NSStatusItem!
     private var sectionHeader: NSMenuItem!
+    private var headerIconView: NSImageView!
+    private var headerTitleLabel: NSTextField!
+    private var headerSubtitleLabel: NSTextField!
     private var indefiniteItem: NSMenuItem!
     private var durationSlider: DurationSlider!
     private var sliderHoursLabel: NSTextField!
     private var sliderMinutesLabel: NSTextField!
-    private var timedItems: [NSMenuItem] = []
     private var sleepInfo = SleepInfo.none
     private var deactivateItem: NSMenuItem!
     private var displaySleepItem: NSMenuItem!
@@ -62,9 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false
 
-        // Single header line: section label when off, live status when on.
-        sectionHeader = NSMenuItem(title: "Keep Awake For", action: nil, keyEquivalent: "")
+        // Status header: custom view so it renders in solid label color
+        // instead of the dimmed look AppKit forces on disabled items.
+        sectionHeader = NSMenuItem()
         sectionHeader.isEnabled = false
+        sectionHeader.view = makeHeaderRow()
         menu.addItem(sectionHeader)
 
         // Lives in the top session group; only visible while a session runs.
@@ -92,25 +96,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let sliderItem = NSMenuItem()
         sliderItem.view = makeSliderRow()
         menu.addItem(sliderItem)
-
-        // Keyboard/VoiceOver path to the same stops: view-backed items are
-        // inert in menu key navigation, so the slider alone would make timed
-        // sessions pointer-only.
-        let timedParent = NSMenuItem(title: "Timed", action: nil, keyEquivalent: "")
-        timedParent.indentationLevel = 1
-        timedParent.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "Timed")
-        let timedMenu = NSMenu()
-        for (index, minutes) in Self.sliderStops.enumerated() {
-            let item = NSMenuItem(title: Self.durationTitle(minutes),
-                                  action: #selector(timedFromMenu(_:)),
-                                  keyEquivalent: "")
-            item.target = self
-            item.tag = index
-            timedMenu.addItem(item)
-            timedItems.append(item)
-        }
-        timedParent.submenu = timedMenu
-        menu.addItem(timedParent)
         menu.addItem(.separator())
 
         displaySleepItem = NSMenuItem(title: "Keep Display Awake",
@@ -135,6 +120,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quit)
 
         statusItem.menu = menu
+    }
+
+    private func makeHeaderRow() -> NSView {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 36))
+
+        let icon = NSImageView(frame: NSRect(x: 14, y: 9, width: 18, height: 18))
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        icon.contentTintColor = .labelColor
+        container.addSubview(icon)
+
+        let title = NSTextField(labelWithString: "")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = .labelColor
+        title.lineBreakMode = .byTruncatingTail
+        title.frame = NSRect(x: 38, y: 18, width: 214, height: 16)
+        container.addSubview(title)
+
+        let subtitle = NSTextField(labelWithString: "")
+        subtitle.font = .systemFont(ofSize: 11)
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.lineBreakMode = .byTruncatingTail
+        subtitle.frame = NSRect(x: 38, y: 4, width: 214, height: 13)
+        container.addSubview(subtitle)
+
+        headerIconView = icon
+        headerTitleLabel = title
+        headerSubtitleLabel = subtitle
+        return container
     }
 
     private func makeSliderRow() -> NSView {
@@ -190,11 +204,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return (h > 0 ? "\(h)h" : "", m > 0 ? "\(m)m" : "")
     }
 
-    private static func durationTitle(_ minutes: Int) -> String {
-        let parts = hourMinuteParts(minutes)
-        return [parts.hours, parts.minutes].filter { !$0.isEmpty }.joined(separator: " ")
-    }
-
     func menuWillOpen(_ menu: NSMenu) {
         sleepInfo = SleepInfo.current()
         refreshUI()  // sync geometry (hidden rows) while still "closed"
@@ -235,13 +244,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let index = min(max(Int(durationSlider.doubleValue.rounded()), 0), Self.sliderStops.count - 1)
         keepAwake.activate(minutes: Self.sliderStops[index])
         // The menu stays open — the header flips to the live countdown.
-    }
-
-    @objc private func timedFromMenu(_ sender: NSMenuItem) {
-        guard Self.sliderStops.indices.contains(sender.tag) else { return }
-        durationSlider.doubleValue = Double(sender.tag)
-        sliderChanged(durationSlider)  // sync preview labels + persisted index
-        keepAwake.activate(minutes: Self.sliderStops[sender.tag])
     }
 
     @objc private func deactivate() {
@@ -313,29 +315,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.toolTip = description
 
         // The header doubles as a state beacon: steaming coffee when on, moon when off.
-        sectionHeader.image = active
+        headerIconView.image = active
             ? Self.symbolImage("cup.and.heat.waves.fill", fallback: "cup.and.saucer.fill",
                                description: "Awake")
             : NSImage(systemSymbolName: "moon.zzz", accessibilityDescription: "Sleep allowed")
         if !active {
-            sectionHeader.title = "Not Keeping Awake"
+            headerTitleLabel.stringValue = "Not Keeping Awake"
         } else if let remaining = keepAwake.remaining {
-            sectionHeader.title = "Keeping Awake — \(Self.format(remaining)) left"
+            headerTitleLabel.stringValue = "Keeping Awake — \(Self.format(remaining)) left"
         } else {
-            sectionHeader.title = "Keeping Awake — Indefinitely"
+            headerTitleLabel.stringValue = "Keeping Awake — Indefinitely"
         }
-        if #available(macOS 14.4, *) {
-            // Symmetric detail line in both states.
-            sectionHeader.subtitle = active
-                ? (keepAwake.allowDisplaySleep
-                    ? "Mac stays awake · display may sleep"
-                    : "Mac and display stay awake")
-                : offStateDetail()
-        }
+        // Symmetric detail line in both states.
+        headerSubtitleLabel.stringValue = active
+            ? (keepAwake.allowDisplaySleep
+                ? "Mac stays awake · display may sleep"
+                : "Mac and display stay awake")
+            : offStateDetail()
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
-        for item in timedItems {
-            item.state = (active && keepAwake.sessionMinutes == Self.sliderStops[item.tag]) ? .on : .off
-        }
         if menuIsOpen {
             // Never add/remove rows mid-track — a session expiring with the
             // menu open would shift items under the cursor. Gray out in place.
