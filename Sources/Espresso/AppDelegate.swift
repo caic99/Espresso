@@ -271,11 +271,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sectionHeader.image = NSImage(systemSymbolName: active ? "cup.and.saucer.fill" : "moon.zzz",
                                       accessibilityDescription: active ? "Awake" : "Sleep allowed")
         if !active {
-            sectionHeader.title = "Keep Awake For"
+            sectionHeader.title = "Not Keeping Awake"
         } else if let remaining = keepAwake.remaining {
             sectionHeader.title = "Keeping Awake — \(Self.format(remaining)) left"
         } else {
             sectionHeader.title = "Keeping Awake — Indefinitely"
+        }
+        if #available(macOS 14.4, *) {
+            sectionHeader.subtitle = active ? nil : "Your Mac will sleep as usual"
         }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
         if menuIsOpen {
