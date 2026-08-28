@@ -108,6 +108,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(sliderItem)
         menu.addItem(.separator())
 
+        // Scope hint: the two toggles below only take effect during sessions.
+        let optionsHeader: NSMenuItem
+        if #available(macOS 14.0, *) {
+            optionsHeader = NSMenuItem.sectionHeader(title: "While Keeping Awake")
+        } else {
+            optionsHeader = NSMenuItem(title: "While Keeping Awake", action: nil, keyEquivalent: "")
+            optionsHeader.isEnabled = false
+        }
+        menu.addItem(optionsHeader)
+
         displaySleepItem = NSMenuItem(title: "Keep Display Awake",
                                       action: #selector(toggleDisplaySleep),
                                       keyEquivalent: "")
