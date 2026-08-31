@@ -168,10 +168,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         container.addSubview(title)
 
         let subtitle = NSTextField(labelWithString: "")
-        subtitle.font = .systemFont(ofSize: 11)
+        subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
-        subtitle.frame = NSRect(x: 38, y: 6, width: 238, height: 13)
+        subtitle.frame = NSRect(x: 38, y: 5, width: 238, height: 16)
         container.addSubview(subtitle)
 
         let toggle = NSSwitch()
