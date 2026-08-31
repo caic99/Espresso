@@ -14,8 +14,9 @@ or Amphetamine, minus everything you don't need.
   timed session (15 min – 24 h; drag to preview, release to start — the menu
   stays open and the header flips to a live countdown). Timed sessions end
   themselves; the last slider position is remembered. A switch in the
-  header toggles the session Control-Center-style — on starts the slider's
-  duration, off deactivates (⌘C does the same while the menu is open).
+  header toggles the session Control-Center-style, and the row below it
+  names the action — "Keep Awake for 2h" when idle, "Deactivate" while
+  running (⌘C while the menu is open).
 - **Honest status header**: while off it shows live "Display sleeps in … ·
   Mac in …" countdowns computed from your actual power settings — and names
   the apps (in a tooltip) if something else is holding the Mac awake. While

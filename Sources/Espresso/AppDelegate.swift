@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var displaySleepItem: NSMenuItem!
     private var lidBlockItem: NSMenuItem!
     private var menuRefreshTimer: Timer?
+    private var menuIsOpen = false
     private var autoEngageFailed = false
     private var engageFailureAlerted = false
     private var lidBlockSuppressedThisSession = false
@@ -84,14 +85,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sectionHeader.view = makeHeaderRow()
         menu.addItem(sectionHeader)
 
-        // Hidden carrier for the ⌘C session toggle — the visible control is
-        // the switch in the header row.
-        sessionToggleItem = NSMenuItem(title: "Toggle Keep Awake",
+        // Session toggle row: "Keep Awake for <slider time>" when idle,
+        // "Deactivate" while running (⌘C). Coexists with the header switch —
+        // this row names what the switch will do.
+        sessionToggleItem = NSMenuItem(title: "Keep Awake",
                                        action: #selector(toggleSession),
                                        keyEquivalent: "c")
         sessionToggleItem.target = self
-        sessionToggleItem.isHidden = true
-        sessionToggleItem.allowsKeyEquivalentWhenHidden = true
         menu.addItem(sessionToggleItem)
 
         indefiniteItem = NSMenuItem(title: "Indefinitely",
@@ -244,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         sleepInfo = SleepInfo.current()
         refreshUI()
+        menuIsOpen = true
         // Keep the countdown live while the menu is held open. Must run in
         // .common mode: .default does not fire during menu tracking.
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -256,6 +257,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         menuRefreshTimer?.invalidate()
         menuRefreshTimer = nil
+        menuIsOpen = false
+        refreshUI()  // unfreeze the session toggle for the next open
     }
 
     // MARK: - Actions
@@ -417,6 +420,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
         headerSwitch.state = active ? .on : .off
+        if active {
+            sessionToggleItem.isEnabled = true
+            sessionToggleItem.title = "Deactivate"
+            sessionToggleItem.image = NSImage(systemSymbolName: "stop.circle",
+                                              accessibilityDescription: "Deactivate")
+        } else if menuIsOpen, sessionToggleItem.title == "Deactivate" {
+            // Session ended while the menu is open: freeze the row disabled
+            // rather than flipping the click's meaning under the cursor.
+            sessionToggleItem.isEnabled = false
+        } else {
+            sessionToggleItem.isEnabled = true
+            let index = min(max(Int(durationSlider.doubleValue.rounded()), 0),
+                            Self.sliderStops.count - 1)
+            sessionToggleItem.title = "Keep Awake for \(Self.durationLabel(Self.sliderStops[index]))"
+            sessionToggleItem.image = NSImage(systemSymbolName: "play.circle",
+                                              accessibilityDescription: "Activate")
+        }
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
         // While a session runs, show the actual engagement; otherwise the
