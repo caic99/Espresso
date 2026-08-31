@@ -150,10 +150,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeHeaderRow() -> NSView {
-        // 290 wide so the two-line status text and the switch never collide.
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 36))
+        // Two lines: icon + title + switch on top; the detail line below at
+        // full width so it never collides with the (wide) real switch.
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 50))
 
-        let icon = NSImageView(frame: NSRect(x: 14, y: 9, width: 18, height: 18))
+        let icon = NSImageView(frame: NSRect(x: 14, y: 27, width: 18, height: 18))
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         icon.contentTintColor = .labelColor
@@ -163,14 +164,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         title.font = .systemFont(ofSize: 13)
         title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail
-        title.frame = NSRect(x: 38, y: 18, width: 196, height: 16)
+        title.frame = NSRect(x: 38, y: 28, width: 180, height: 16)
         container.addSubview(title)
 
         let subtitle = NSTextField(labelWithString: "")
         subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
-        subtitle.frame = NSRect(x: 38, y: 4, width: 196, height: 13)
+        subtitle.frame = NSRect(x: 38, y: 6, width: 238, height: 13)
         container.addSubview(subtitle)
 
         let toggle = NSSwitch()
@@ -179,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.action = #selector(headerSwitchChanged(_:))
         toggle.sizeToFit()
         toggle.setFrameOrigin(NSPoint(x: 290 - 12 - toggle.frame.width,
-                                      y: (36 - toggle.frame.height) / 2))
+                                      y: 50 - toggle.frame.height - 5))
         toggle.setAccessibilityLabel("Keep awake")
         container.addSubview(toggle)
 
@@ -398,7 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !active {
             headerTitleLabel.stringValue = "Not Keeping Awake"
         } else if let remaining = keepAwake.remaining {
-            headerTitleLabel.stringValue = "Keeping Awake — \(Self.format(remaining)) left"
+            headerTitleLabel.stringValue = "Keeping Awake — \(Self.format(remaining))"
         } else {
             headerTitleLabel.stringValue = "Keeping Awake — Indefinitely"
         }
