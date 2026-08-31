@@ -9,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var headerIconView: NSImageView!
     private var headerTitleLabel: NSTextField!
     private var headerSubtitleLabel: NSTextField!
-    private var headerSwitch: NSSwitch!
     private var indefiniteItem: NSMenuItem!
     private var durationSlider: DurationSlider!
     private var sliderValueLabel: NSTextField!
@@ -85,9 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sectionHeader.view = makeHeaderRow()
         menu.addItem(sectionHeader)
 
-        // Session toggle row: "Keep Awake for <slider time>" when idle,
-        // "Deactivate" while running (⌘C). Coexists with the header switch —
-        // this row names what the switch will do.
+        // Session toggle: "Keep Awake for <slider time>" when idle,
+        // "Deactivate" while running. ⌘C fires it while the menu is open.
         sessionToggleItem = NSMenuItem(title: "Keep Awake",
                                        action: #selector(toggleSession),
                                        keyEquivalent: "c")
@@ -150,11 +148,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeHeaderRow() -> NSView {
-        // Two lines: icon + title + switch on top; the detail line below at
-        // full width so it never collides with the (wide) real switch.
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 50))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 36))
 
-        let icon = NSImageView(frame: NSRect(x: 14, y: 27, width: 18, height: 18))
+        let icon = NSImageView(frame: NSRect(x: 14, y: 9, width: 18, height: 18))
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         icon.contentTintColor = .labelColor
@@ -164,43 +160,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         title.font = .systemFont(ofSize: 13)
         title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail
-        title.frame = NSRect(x: 38, y: 28, width: 180, height: 16)
+        title.frame = NSRect(x: 38, y: 18, width: 214, height: 16)
         container.addSubview(title)
 
         let subtitle = NSTextField(labelWithString: "")
-        subtitle.font = .systemFont(ofSize: 13)
+        subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
-        subtitle.frame = NSRect(x: 38, y: 5, width: 238, height: 16)
+        subtitle.frame = NSRect(x: 38, y: 4, width: 214, height: 13)
         container.addSubview(subtitle)
-
-        let toggle = NSSwitch()
-        toggle.controlSize = .small
-        toggle.target = self
-        toggle.action = #selector(headerSwitchChanged(_:))
-        toggle.sizeToFit()
-        toggle.setFrameOrigin(NSPoint(x: 290 - 12 - toggle.frame.width,
-                                      y: 50 - toggle.frame.height - 5))
-        toggle.setAccessibilityLabel("Keep awake")
-        container.addSubview(toggle)
 
         headerIconView = icon
         headerTitleLabel = title
         headerSubtitleLabel = subtitle
-        headerSwitch = toggle
         return container
     }
 
-    @objc private func headerSwitchChanged(_ sender: NSSwitch) {
-        if sender.state == .on {
-            commitSliderSelection()
-        } else {
-            keepAwake.deactivate()
-        }
-    }
-
     private func makeSliderRow() -> NSView {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 30))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 30))
 
         let defaults = UserDefaults.standard
         let stored = defaults.object(forKey: Self.sliderIndexKey) == nil
@@ -216,12 +193,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         slider.allowsTickMarkValuesOnly = true
         slider.isContinuous = true
         slider.controlSize = .small
-        slider.frame = NSRect(x: 22, y: 4, width: 220, height: 22)
+        slider.frame = NSRect(x: 22, y: 4, width: 190, height: 22)
         slider.setAccessibilityLabel("Keep awake duration")
         container.addSubview(slider)
 
         let label = Self.makeValueLabel(Self.durationLabel(Self.sliderStops[index]))
-        label.frame = NSRect(x: 248, y: 7, width: 28, height: 16)
+        label.frame = NSRect(x: 216, y: 7, width: 36, height: 16)
         container.addSubview(label)
 
         durationSlider = slider
@@ -402,7 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !active {
             headerTitleLabel.stringValue = "Not Keeping Awake"
         } else if let remaining = keepAwake.remaining {
-            headerTitleLabel.stringValue = "Keeping Awake — \(Self.format(remaining))"
+            headerTitleLabel.stringValue = "Keeping Awake — \(Self.format(remaining)) left"
         } else {
             headerTitleLabel.stringValue = "Keeping Awake — Indefinitely"
         }
@@ -419,7 +396,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 : "Mac held awake by " + sleepInfo.preventers.joined(separator: ", ")
         }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
-        headerSwitch.state = active ? .on : .off
         if active {
             sessionToggleItem.isEnabled = true
             sessionToggleItem.title = "Deactivate"
