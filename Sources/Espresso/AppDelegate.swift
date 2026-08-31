@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var headerIconView: NSImageView!
     private var headerTitleLabel: NSTextField!
     private var headerSubtitleLabel: NSTextField!
+    private var headerSwitch: NSSwitch!
     private var indefiniteItem: NSMenuItem!
     private var durationSlider: DurationSlider!
     private var sliderValueLabel: NSTextField!
@@ -17,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var displaySleepItem: NSMenuItem!
     private var lidBlockItem: NSMenuItem!
     private var menuRefreshTimer: Timer?
-    private var menuIsOpen = false
     private var autoEngageFailed = false
     private var engageFailureAlerted = false
     private var lidBlockSuppressedThisSession = false
@@ -84,12 +84,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sectionHeader.view = makeHeaderRow()
         menu.addItem(sectionHeader)
 
-        // Session toggle: "Keep Awake for <slider time>" when idle,
-        // "Deactivate" while running. ⌘C fires it while the menu is open.
-        sessionToggleItem = NSMenuItem(title: "Keep Awake",
+        // Hidden carrier for the ⌘C session toggle — the visible control is
+        // the switch in the header row.
+        sessionToggleItem = NSMenuItem(title: "Toggle Keep Awake",
                                        action: #selector(toggleSession),
                                        keyEquivalent: "c")
         sessionToggleItem.target = self
+        sessionToggleItem.isHidden = true
+        sessionToggleItem.allowsKeyEquivalentWhenHidden = true
         menu.addItem(sessionToggleItem)
 
         indefiniteItem = NSMenuItem(title: "Indefinitely",
@@ -148,7 +150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func makeHeaderRow() -> NSView {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 36))
+        // 290 wide so the two-line status text and the switch never collide.
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 36))
 
         let icon = NSImageView(frame: NSRect(x: 14, y: 9, width: 18, height: 18))
         icon.imageScaling = .scaleProportionallyUpOrDown
@@ -160,24 +163,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         title.font = .systemFont(ofSize: 13)
         title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail
-        title.frame = NSRect(x: 38, y: 18, width: 214, height: 16)
+        title.frame = NSRect(x: 38, y: 18, width: 196, height: 16)
         container.addSubview(title)
 
         let subtitle = NSTextField(labelWithString: "")
         subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
-        subtitle.frame = NSRect(x: 38, y: 4, width: 214, height: 13)
+        subtitle.frame = NSRect(x: 38, y: 4, width: 196, height: 13)
         container.addSubview(subtitle)
+
+        let toggle = NSSwitch()
+        toggle.controlSize = .small
+        toggle.target = self
+        toggle.action = #selector(headerSwitchChanged(_:))
+        toggle.sizeToFit()
+        toggle.setFrameOrigin(NSPoint(x: 290 - 12 - toggle.frame.width,
+                                      y: (36 - toggle.frame.height) / 2))
+        toggle.setAccessibilityLabel("Keep awake")
+        container.addSubview(toggle)
 
         headerIconView = icon
         headerTitleLabel = title
         headerSubtitleLabel = subtitle
+        headerSwitch = toggle
         return container
     }
 
+    @objc private func headerSwitchChanged(_ sender: NSSwitch) {
+        if sender.state == .on {
+            commitSliderSelection()
+        } else {
+            keepAwake.deactivate()
+        }
+    }
+
     private func makeSliderRow() -> NSView {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 30))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 30))
 
         let defaults = UserDefaults.standard
         let stored = defaults.object(forKey: Self.sliderIndexKey) == nil
@@ -193,12 +215,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         slider.allowsTickMarkValuesOnly = true
         slider.isContinuous = true
         slider.controlSize = .small
-        slider.frame = NSRect(x: 22, y: 4, width: 190, height: 22)
+        slider.frame = NSRect(x: 22, y: 4, width: 220, height: 22)
         slider.setAccessibilityLabel("Keep awake duration")
         container.addSubview(slider)
 
         let label = Self.makeValueLabel(Self.durationLabel(Self.sliderStops[index]))
-        label.frame = NSRect(x: 216, y: 7, width: 36, height: 16)
+        label.frame = NSRect(x: 248, y: 7, width: 28, height: 16)
         container.addSubview(label)
 
         durationSlider = slider
@@ -221,7 +243,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         sleepInfo = SleepInfo.current()
         refreshUI()
-        menuIsOpen = true
         // Keep the countdown live while the menu is held open. Must run in
         // .common mode: .default does not fire during menu tracking.
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -234,8 +255,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         menuRefreshTimer?.invalidate()
         menuRefreshTimer = nil
-        menuIsOpen = false
-        refreshUI()  // unfreeze the session toggle for the next open
     }
 
     // MARK: - Actions
@@ -396,23 +415,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 : "Mac held awake by " + sleepInfo.preventers.joined(separator: ", ")
         }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
-        if active {
-            sessionToggleItem.isEnabled = true
-            sessionToggleItem.title = "Deactivate"
-            sessionToggleItem.image = NSImage(systemSymbolName: "stop.circle",
-                                              accessibilityDescription: "Deactivate")
-        } else if menuIsOpen, sessionToggleItem.title == "Deactivate" {
-            // Session ended while the menu is open: freeze the row disabled
-            // rather than flipping the click's meaning under the cursor.
-            sessionToggleItem.isEnabled = false
-        } else {
-            sessionToggleItem.isEnabled = true
-            let index = min(max(Int(durationSlider.doubleValue.rounded()), 0),
-                            Self.sliderStops.count - 1)
-            sessionToggleItem.title = "Keep Awake for \(Self.durationLabel(Self.sliderStops[index]))"
-            sessionToggleItem.image = NSImage(systemSymbolName: "play.circle",
-                                              accessibilityDescription: "Activate")
-        }
+        headerSwitch.state = active ? .on : .off
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
         // While a session runs, show the actual engagement; otherwise the
