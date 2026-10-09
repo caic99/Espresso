@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="128" alt="Espresso icon">
+
 # Espresso ☕
 
 A tiny native macOS menu bar app that keeps your Mac awake — like `caffeinate`
