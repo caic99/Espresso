@@ -5,6 +5,11 @@
 A tiny native macOS menu bar app that keeps your Mac awake — like `caffeinate`
 or Amphetamine, minus everything you don't need.
 
+**Built for the agent era** 🤖 — kick off a long agent run, close the lid,
+and walk away. Espresso keeps the Mac awake with the lid shut, on AC or
+battery, so your coding agents, builds, and SSH sessions are still working
+when you get there.
+
 ![Espresso's menu, idle (left) and with a 2-hour session running (right)](docs/screenshot.png)
 
 ## Features
@@ -26,8 +31,8 @@ or Amphetamine, minus everything you don't need.
   sleep while the system stays awake (`caffeinate -i` behavior). Remembered.
 - **Block Lid-Close Sleep** (checked by default): while a session runs — on
   AC or battery — closing the lid doesn't sleep the Mac, so you can unplug
-  and carry it without dropping downloads or SSH sessions. Remembered; see
-  the guardrails below.
+  and carry it without dropping agent runs, downloads, or SSH sessions.
+  Remembered; see the guardrails below.
 - **Low Power Mode aware**: turning on Low Power Mode ends the running
   session — asking the Mac to conserve wins over keeping it awake.
   (Starting a session while Low Power Mode is already on still works.)
