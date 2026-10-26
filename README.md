@@ -29,10 +29,10 @@ when you get there.
   on it shows the session countdown and the display policy.
 - **Keep Display Awake** (checked by default): uncheck to let the display
   sleep while the system stays awake (`caffeinate -i` behavior). Remembered.
-- **Block Lid-Close Sleep** (checked by default): while a session runs — on
-  AC or battery — closing the lid doesn't sleep the Mac, so you can unplug
-  and carry it without dropping agent runs, downloads, or SSH sessions.
-  Remembered; see the guardrails below.
+- **Block Lid-Close Sleep** (on by default once set up): while a session
+  runs — on AC or battery — closing the lid doesn't sleep the Mac, so you
+  can unplug and carry it without dropping agent runs, downloads, or SSH
+  sessions. Needs a one-time, one-click setup; see the guardrails below.
 - **Low Power Mode aware**: turning on Low Power Mode ends the running
   session — asking the Mac to conserve wins over keeping it awake.
   (Starting a session while Low Power Mode is already on still works.)
@@ -90,13 +90,22 @@ Espresso is strict about it:
   reaches the OS's critical-level forced shutdown. Timed sessions and Low
   Power Mode are your friends here.
 - Espresso only sets the flag when it can also *clear* it unattended: it
-  requires passwordless `sudo -n` and never falls back to a password dialog
-  that could go unanswered overnight. Without passwordless sudo it refuses,
-  with instructions to add a scoped rule:
+  uses passwordless `sudo -n` and never shows a password dialog at release
+  time, where it could go unanswered overnight.
+- **One-time setup, no Terminal needed**: until it's set up, the menu item
+  reads **Block Lid-Close Sleep…** (the ellipsis means clicking opens a
+  dialog). Click it, then **Set Up…**, and approve the standard macOS
+  administrator prompt once. Espresso installs a rule, just for your
+  account, that lets it run *only* `pmset disablesleep 0` / `1` without a
+  password. The rule is checked with `visudo` before it goes live, so a bad
+  file can never break `sudo`. Choosing **Not Now** leaves the option off
+  until you click it again. Prefer to do it yourself? This is the same rule:
 
   ```bash
-  echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, /usr/bin/pmset disablesleep 1" | sudo tee /etc/sudoers.d/espresso-lidsleep
+  echo "#$(id -u) ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, /usr/bin/pmset disablesleep 1" | sudo tee /etc/sudoers.d/zz-espresso-lidsleep-$(id -u)
   ```
+
+  To revoke it: `sudo rm /etc/sudoers.d/zz-espresso-lidsleep-$(id -u)`.
 
 - If Espresso is killed un-cleanly while engaged, it clears the leftover
   flag at next launch; `sudo pmset disablesleep 0` (or a reboot) also

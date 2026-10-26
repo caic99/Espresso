@@ -19,7 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var menuRefreshTimer: Timer?
     private var menuIsOpen = false
     private var autoEngageFailed = false
-    private var engageFailureAlerted = false
+    /// Whether passwordless `pmset disablesleep` is set up (probed, then
+    /// corrected by real engage results and the setup flow).
+    private var lidRuleReady = false
     private var lidBlockSuppressedThisSession = false
 
     /// Snap points for the duration slider, in minutes (15 m – 24 h).
@@ -39,12 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         lidBlocker.reconcileAtLaunch()
+        lidRuleReady = LidSleepSetup.probeReady()
         sleepInfo = SleepInfo.current()
         keepAwake.onChange = { [weak self] in
             guard let self else { return }
             if !self.keepAwake.isActive {
                 self.autoEngageFailed = false
-                self.engageFailureAlerted = false
                 self.lidBlockSuppressedThisSession = false
                 self.disengageLidBlockOrWarn()
             } else {
@@ -220,6 +222,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         sleepInfo = SleepInfo.current()
+        if !lidRuleReady {
+            lidRuleReady = LidSleepSetup.probeReady()  // picks up a rule added by hand
+        }
         refreshUI()
         menuIsOpen = true
         // Keep the countdown live while the menu is held open. Must run in
@@ -248,7 +253,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// onChange, so clear the per-session lid-block backoff here.
     private func startSession(minutes: Int?) {
         autoEngageFailed = false
-        engageFailureAlerted = false
         keepAwake.activate(minutes: minutes)
     }
 
@@ -279,29 +283,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         keepAwake.allowDisplaySleep.toggle()
     }
 
+    /// The checkmark: actual engagement during a session; otherwise whether
+    /// the next session will block (preference on and setup done).
+    private var lidBlockDisplayedOn: Bool {
+        keepAwake.isActive ? lidBlocker.isEngaged : (blockLidSleepPreferred && lidRuleReady)
+    }
+
+    /// Clicks always flip what the checkmark shows. Turning it on before
+    /// setup opens the setup offer; declining that turns the preference off,
+    /// so the checkmark never claims a block that can't happen.
     @objc private func toggleLidBlock() {
-        let engageWasFailing = autoEngageFailed
-        let failureWasAlerted = engageFailureAlerted
+        guard !LidSleepSetup.isRunning else { return }
+        let wantOn = !lidBlockDisplayedOn
         autoEngageFailed = false
-        engageFailureAlerted = false
         lidBlockSuppressedThisSession = false
-        let wantOn: Bool
-        if keepAwake.isActive, blockLidSleepPreferred, !lidBlocker.isEngaged,
-           engageWasFailing, failureWasAlerted {
-            // The user has already seen the failure alert: treat the click
-            // as clearing the preference instead of silently re-arming it.
-            // (After a silent auto failure, the click retries interactively
-            // so the sudo guidance surfaces immediately.)
-            wantOn = false
-        } else {
-            let displayedOn = keepAwake.isActive ? lidBlocker.isEngaged : blockLidSleepPreferred
-            wantOn = !displayedOn
-        }
         UserDefaults.standard.set(wantOn, forKey: Self.blockLidSleepKey)
-        if wantOn {
-            engageLidBlockIfAppropriate(interactive: true)
-        } else {
+        if !wantOn {
             disengageLidBlockOrWarn()
+        } else if !lidRuleReady {
+            offerLidSleepSetup()
+        } else {
+            engageLidBlockIfAppropriate(interactive: true)
         }
         refreshUI()
     }
@@ -311,7 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// session), session end, and quit are the release paths. Alerts only on
     /// a user-initiated toggle; auto paths stay quiet, back off after a
     /// failure, and the live checkmark reflects the truth instead.
-    private func engageLidBlockIfAppropriate(interactive: Bool = false) {
+    private func engageLidBlockIfAppropriate(interactive: Bool = false, afterSetup: Bool = false) {
         guard blockLidSleepPreferred, keepAwake.isActive, !lidBlocker.isEngaged,
               !lidBlockSuppressedThisSession else { return }
         if !interactive && autoEngageFailed { return }
@@ -321,19 +323,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // latched disengage. Not a sudo failure — no backoff, no alert.
             guard keepAwake.isActive else { return }
             autoEngageFailed = true
+            lidRuleReady = false
             if interactive {
-                engageFailureAlerted = true
-                showAlert("Passwordless sudo needed",
-                          "Blocking lid-close sleep runs \"pmset disablesleep\" as root, and "
-                          + "Espresso only engages it when it can also release it unattended "
-                          + "(session end, quit, Low Power Mode). Set that up once in Terminal:\n\n"
-                          + "echo \"$USER ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, "
-                          + "/usr/bin/pmset disablesleep 1\" | sudo tee /etc/sudoers.d/espresso-lidsleep")
+                if afterSetup {
+                    declineLidBlock()
+                    showAlert("Lid-close blocking is still unavailable",
+                              "Espresso installed its rule at \(LidSleepSetup.sudoersPath), but "
+                              + "“sudo -n pmset disablesleep” still asks for a password, so "
+                              + "another sudoers setting takes precedence. Run “sudo -l” in "
+                              + "Terminal to see which rules apply to you.")
+                } else {
+                    offerLidSleepSetup()
+                }
             }
-        } else if !keepAwake.isActive {
-            // The session ended while the privileged command ran.
-            lidBlocker.disengage()
+        } else {
+            lidRuleReady = true
+            if !keepAwake.isActive {
+                // The session ended while the privileged command ran.
+                lidBlocker.disengage()
+            }
         }
+    }
+
+    /// Espresso only engages the root flag when it can also release it with
+    /// nobody at the keyboard, so engaging needs passwordless access to
+    /// exactly `pmset disablesleep`. Offer to install that rule ourselves.
+    private func offerLidSleepSetup() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Allow Espresso to block lid-close sleep?"
+        alert.informativeText = "This needs a one-time administrator approval. Espresso adds a "
+            + "rule that lets it run only “pmset disablesleep” without a password, so it can "
+            + "always release the block on its own when a session ends, you quit, or Low Power "
+            + "Mode turns on."
+        alert.addButton(withTitle: "Set Up…")
+        alert.addButton(withTitle: "Not Now")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            declineLidBlock()
+            refreshUI()
+            return
+        }
+
+        LidSleepSetup.install { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .installed:
+                self.lidRuleReady = true
+                self.autoEngageFailed = false
+                self.engageLidBlockIfAppropriate(interactive: true, afterSetup: true)
+            case .cancelled:
+                self.declineLidBlock()
+            case .failed(let message):
+                self.declineLidBlock()
+                self.showAlert("Setup didn't complete",
+                               (message.isEmpty ? "" : message + "\n\n")
+                               + "You can add the rule by hand in Terminal:\n\n"
+                               + LidSleepSetup.manualCommand)
+            }
+            self.refreshUI()
+        }
+        refreshUI()  // "Waiting for Administrator Approval…" while the prompt is up
+    }
+
+    /// Declining (or failing) setup turns the preference off, so the menu
+    /// shows the truth; one click on the item offers setup again.
+    private func declineLidBlock() {
+        UserDefaults.standard.set(false, forKey: Self.blockLidSleepKey)
+        autoEngageFailed = false
     }
 
     private func disengageLidBlockOrWarn() {
@@ -417,7 +473,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
         // While a session runs, show the actual engagement; otherwise the
         // preference (what the next session will do).
-        lidBlockItem.state = (active ? lidBlocker.isEngaged : blockLidSleepPreferred) ? .on : .off
+        lidBlockItem.state = lidBlockDisplayedOn ? .on : .off
+        if LidSleepSetup.isRunning {
+            lidBlockItem.isEnabled = false
+            lidBlockItem.title = "Waiting for Administrator Approval…"
+        } else {
+            // Ellipsis = clicking opens a dialog (the one-time setup offer).
+            lidBlockItem.isEnabled = true
+            lidBlockItem.title = (!lidRuleReady && !lidBlocker.isEngaged)
+                ? "Block Lid-Close Sleep…" : "Block Lid-Close Sleep"
+        }
     }
 
     /// "Display sleeps in 42m · Mac sleeps in 55m" — live countdowns from the
