@@ -88,18 +88,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Session toggle: "Keep Awake for <slider time>" when idle,
         // "Deactivate" while running. ⌘C fires it while the menu is open.
-        sessionToggleItem = NSMenuItem(title: "Keep Awake",
+        sessionToggleItem = NSMenuItem(title: L("Keep Awake"),
                                        action: #selector(toggleSession),
                                        keyEquivalent: "c")
         sessionToggleItem.target = self
         menu.addItem(sessionToggleItem)
 
-        indefiniteItem = NSMenuItem(title: "Indefinitely",
+        indefiniteItem = NSMenuItem(title: L("Indefinitely"),
                                     action: #selector(activateIndefinitely),
                                     keyEquivalent: "")
         indefiniteItem.target = self
         indefiniteItem.image = NSImage(systemSymbolName: "infinity",
-                                       accessibilityDescription: "Indefinitely")
+                                       accessibilityDescription: L("Indefinitely"))
         menu.addItem(indefiniteItem)
 
         // Timed sessions: a native slider snapping to sliderStops. Dragging
@@ -113,34 +113,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Scope hint: the two toggles below only take effect during sessions.
         let optionsHeader: NSMenuItem
         if #available(macOS 14.0, *) {
-            optionsHeader = NSMenuItem.sectionHeader(title: "While Keeping Awake")
+            optionsHeader = NSMenuItem.sectionHeader(title: L("While Keeping Awake"))
         } else {
-            optionsHeader = NSMenuItem(title: "While Keeping Awake", action: nil, keyEquivalent: "")
+            optionsHeader = NSMenuItem(title: L("While Keeping Awake"), action: nil, keyEquivalent: "")
             optionsHeader.isEnabled = false
         }
         menu.addItem(optionsHeader)
 
-        displaySleepItem = NSMenuItem(title: "Keep Display Awake",
+        displaySleepItem = NSMenuItem(title: L("Keep Display Awake"),
                                       action: #selector(toggleDisplaySleep),
                                       keyEquivalent: "")
         displaySleepItem.target = self
         displaySleepItem.image = NSImage(systemSymbolName: "display",
-                                         accessibilityDescription: "Display")
+                                         accessibilityDescription: L("Keep Display Awake"))
         menu.addItem(displaySleepItem)
 
-        lidBlockItem = NSMenuItem(title: "Block Lid-Close Sleep",
+        lidBlockItem = NSMenuItem(title: L("Block Lid-Close Sleep"),
                                   action: #selector(toggleLidBlock),
                                   keyEquivalent: "")
         lidBlockItem.target = self
         lidBlockItem.image = Self.symbolImage("macbook", fallback: "laptopcomputer",
-                                              description: "Lid")
-        lidBlockItem.toolTip = "Keep the Mac awake with the lid closed during sessions "
+                                              description: L("Block Lid-Close Sleep"))
+        lidBlockItem.toolTip = L("Keep the Mac awake with the lid closed during sessions "
             + "(on by default, AC or battery). Releases automatically when the session "
-            + "ends, Espresso quits, or Low Power Mode turns on."
+            + "ends, Espresso quits, or Low Power Mode turns on.")
         menu.addItem(lidBlockItem)
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit Espresso",
+        let quit = NSMenuItem(title: L("Quit Espresso"),
                               action: #selector(NSApplication.terminate(_:)),
                               keyEquivalent: "q")
         quit.target = NSApp
@@ -195,13 +195,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         slider.allowsTickMarkValuesOnly = true
         slider.isContinuous = true
         slider.controlSize = .small
-        slider.frame = NSRect(x: 22, y: 4, width: 190, height: 22)
-        slider.setAccessibilityLabel("Keep awake duration")
-        container.addSubview(slider)
-
+        // Size the value label for the widest localized stop ("24h" vs
+        // "24小时"); the slider takes the rest of the row.
         let label = Self.makeValueLabel(Self.durationLabel(Self.sliderStops[index]))
-        label.frame = NSRect(x: 216, y: 7, width: 36, height: 16)
+        let labelWidth = Self.sliderStops.map { minutes -> CGFloat in
+            (Self.durationLabel(minutes) as NSString).size(withAttributes: [.font: label.font!]).width
+        }.max()!.rounded(.up) + 4
+        let labelX = 252 - labelWidth
+        label.frame = NSRect(x: labelX, y: 7, width: labelWidth, height: 16)
         container.addSubview(label)
+
+        slider.frame = NSRect(x: 22, y: 4, width: labelX - 6 - 22, height: 22)
+        slider.setAccessibilityLabel(L("Keep awake duration"))
+        container.addSubview(slider)
 
         durationSlider = slider
         sliderValueLabel = label
@@ -217,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private static func durationLabel(_ minutes: Int) -> String {
-        minutes < 60 ? "\(minutes)m" : "\(minutes / 60)h"
+        minutes < 60 ? L("%dm", minutes) : L("%dh", minutes / 60)
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -327,11 +333,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if interactive {
                 if afterSetup {
                     declineLidBlock()
-                    showAlert("Lid-close blocking is still unavailable",
-                              "Espresso installed its rule at \(LidSleepSetup.sudoersPath), but "
-                              + "“sudo -n pmset disablesleep” still asks for a password, so "
-                              + "another sudoers setting takes precedence. Run “sudo -l” in "
-                              + "Terminal to see which rules apply to you.")
+                    showAlert(L("Lid-close blocking is still unavailable"),
+                              L("Espresso installed its rule at %@, but "
+                                + "“sudo -n pmset disablesleep” still asks for a password, so "
+                                + "another sudoers setting takes precedence. Run “sudo -l” in "
+                                + "Terminal to see which rules apply to you.",
+                                LidSleepSetup.sudoersPath))
                 } else {
                     offerLidSleepSetup()
                 }
@@ -351,13 +358,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func offerLidSleepSetup() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "Allow Espresso to block lid-close sleep?"
-        alert.informativeText = "This needs a one-time administrator approval. Espresso adds a "
+        alert.messageText = L("Allow Espresso to block lid-close sleep?")
+        alert.informativeText = L("This needs a one-time administrator approval. Espresso adds a "
             + "rule that lets it run only “pmset disablesleep” without a password, so it can "
             + "always release the block on its own when a session ends, you quit, or Low Power "
-            + "Mode turns on."
-        alert.addButton(withTitle: "Set Up…")
-        alert.addButton(withTitle: "Not Now")
+            + "Mode turns on.")
+        alert.addButton(withTitle: L("Set Up…"))
+        alert.addButton(withTitle: L("Not Now"))
         guard alert.runModal() == .alertFirstButtonReturn else {
             declineLidBlock()
             refreshUI()
@@ -375,9 +382,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.declineLidBlock()
             case .failed(let message):
                 self.declineLidBlock()
-                self.showAlert("Setup didn't complete",
+                self.showAlert(L("Setup didn't complete"),
                                (message.isEmpty ? "" : message + "\n\n")
-                               + "You can add the rule by hand in Terminal:\n\n"
+                               + L("You can add the rule by hand in Terminal:") + "\n\n"
                                + LidSleepSetup.manualCommand)
             }
             self.refreshUI()
@@ -394,9 +401,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func disengageLidBlockOrWarn() {
         if !lidBlocker.disengage() {
-            showAlert("Lid-sleep block is still on",
-                      "Espresso couldn't clear \"pmset disablesleep\". Run "
-                      + "\"sudo pmset disablesleep 0\" in Terminal to restore normal lid behavior.")
+            showAlert(L("Lid-sleep block is still on"),
+                      L("Espresso couldn’t clear “pmset disablesleep”. Run "
+                        + "“sudo pmset disablesleep 0” in Terminal to restore normal lid behavior."))
         }
     }
 
@@ -420,7 +427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshUI() {
         let active = keepAwake.isActive
-        let description = active ? "Espresso: keeping Mac awake" : "Espresso: inactive"
+        let description = active ? L("Espresso: keeping Mac awake") : L("Espresso: inactive")
         statusItem.button?.image = active
             ? Self.symbolImage("cup.and.heat.waves.fill", fallback: "cup.and.saucer.fill",
                                description: description)
@@ -430,34 +437,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The header doubles as a state beacon: steaming coffee when on, moon when off.
         headerIconView.image = active
             ? Self.symbolImage("cup.and.heat.waves.fill", fallback: "cup.and.saucer.fill",
-                               description: "Awake")
-            : NSImage(systemSymbolName: "moon.zzz", accessibilityDescription: "Sleep allowed")
+                               description: L("Awake"))
+            : NSImage(systemSymbolName: "moon.zzz", accessibilityDescription: L("Sleep allowed"))
         if !active {
-            headerTitleLabel.stringValue = "Not Keeping Awake"
+            headerTitleLabel.stringValue = L("Not Keeping Awake")
         } else if let remaining = keepAwake.remaining {
-            headerTitleLabel.stringValue = "Keeping Awake — \(Self.format(remaining)) left"
+            headerTitleLabel.stringValue = L("Keeping Awake — %@ left", Self.format(remaining))
         } else {
-            headerTitleLabel.stringValue = "Keeping Awake — Indefinitely"
+            headerTitleLabel.stringValue = L("Keeping Awake — Indefinitely")
         }
         // Symmetric detail line in both states, short enough to never truncate;
         // app names live in the tooltip.
         if active {
             headerSubtitleLabel.stringValue = keepAwake.allowDisplaySleep
-                ? "Mac stays awake · display may sleep"
-                : "Mac and display stay awake"
+                ? L("Mac stays awake · display may sleep")
+                : L("Mac and display stay awake")
             headerSubtitleLabel.toolTip = nil
         } else {
             headerSubtitleLabel.stringValue = offStateDetail()
             headerSubtitleLabel.toolTip = sleepInfo.preventers.isEmpty ? nil
-                : "Mac held awake by " + sleepInfo.preventers.joined(separator: ", ")
+                : L("Mac held awake by %@", ListFormatter.localizedString(byJoining: sleepInfo.preventers))
         }
         indefiniteItem.state = (active && keepAwake.sessionMinutes == nil) ? .on : .off
         if active {
             sessionToggleItem.isEnabled = true
-            sessionToggleItem.title = "Deactivate"
+            sessionToggleItem.title = L("Deactivate")
             sessionToggleItem.image = NSImage(systemSymbolName: "stop.circle",
-                                              accessibilityDescription: "Deactivate")
-        } else if menuIsOpen, sessionToggleItem.title == "Deactivate" {
+                                              accessibilityDescription: L("Deactivate"))
+        } else if menuIsOpen, sessionToggleItem.title == L("Deactivate") {
             // Session ended while the menu is open: freeze the row disabled
             // rather than flipping the click's meaning under the cursor.
             sessionToggleItem.isEnabled = false
@@ -465,9 +472,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             sessionToggleItem.isEnabled = true
             let index = min(max(Int(durationSlider.doubleValue.rounded()), 0),
                             Self.sliderStops.count - 1)
-            sessionToggleItem.title = "Keep Awake for \(Self.durationLabel(Self.sliderStops[index]))"
+            sessionToggleItem.title = L("Keep Awake for %@", Self.durationLabel(Self.sliderStops[index]))
             sessionToggleItem.image = NSImage(systemSymbolName: "play.circle",
-                                              accessibilityDescription: "Activate")
+                                              accessibilityDescription: L("Activate"))
         }
         // Positive framing: checked means the display is kept on.
         displaySleepItem.state = keepAwake.allowDisplaySleep ? .off : .on
@@ -476,12 +483,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lidBlockItem.state = lidBlockDisplayedOn ? .on : .off
         if LidSleepSetup.isRunning {
             lidBlockItem.isEnabled = false
-            lidBlockItem.title = "Waiting for Administrator Approval…"
+            lidBlockItem.title = L("Waiting for Administrator Approval…")
         } else {
             // Ellipsis = clicking opens a dialog (the one-time setup offer).
             lidBlockItem.isEnabled = true
             lidBlockItem.title = (!lidRuleReady && !lidBlocker.isEngaged)
-                ? "Block Lid-Close Sleep…" : "Block Lid-Close Sleep"
+                ? L("Block Lid-Close Sleep…") : L("Block Lid-Close Sleep")
         }
     }
 
@@ -493,17 +500,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var parts: [String] = []
         if sleepInfo.displaySleepMinutes > 0 {
             let remaining = max(0, TimeInterval(sleepInfo.displaySleepMinutes * 60) - idle)
-            parts.append("Display sleeps in \(Self.format(remaining))")
+            parts.append(L("Display sleeps in %@", Self.format(remaining)))
         } else {
-            parts.append("Display never sleeps")
+            parts.append(L("Display never sleeps"))
         }
         if !sleepInfo.preventers.isEmpty {
-            parts.append("Mac kept awake")
+            parts.append(L("Mac kept awake"))
         } else if sleepInfo.systemSleepMinutes > 0 {
             let remaining = max(0, TimeInterval(sleepInfo.systemSleepMinutes * 60) - idle)
-            parts.append("Mac in \(Self.format(remaining))")
+            parts.append(L("Mac in %@", Self.format(remaining)))
         } else {
-            parts.append("Mac never sleeps")
+            parts.append(L("Mac never sleeps"))
         }
         return parts.joined(separator: " · ")
     }
@@ -515,9 +522,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let hours = totalMinutes / 60
         let minutes = totalMinutes % 60
         if hours > 0 {
-            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+            return minutes > 0 ? L("%dh %dm", hours, minutes) : L("%dh", hours)
         }
-        return "\(minutes)m"
+        return L("%dm", minutes)
     }
 
     // MARK: - Launch arguments

@@ -1,0 +1,51 @@
+/* Simplified Chinese. Keys are the English UI text. */
+
+/* Menu */
+"Keep Awake" = "保持唤醒";
+"Indefinitely" = "无限期";
+"Keep Awake for %@" = "保持唤醒 %@";
+"Deactivate" = "停用";
+"Activate" = "启用";
+"While Keeping Awake" = "保持唤醒时";
+"Keep Display Awake" = "保持显示器唤醒";
+"Block Lid-Close Sleep" = "合盖不睡眠";
+"Block Lid-Close Sleep…" = "合盖不睡眠…";
+"Waiting for Administrator Approval…" = "正在等待管理员授权…";
+"Quit Espresso" = "退出 Espresso";
+"Keep awake duration" = "保持唤醒时长";
+"Keep the Mac awake with the lid closed during sessions (on by default, AC or battery). Releases automatically when the session ends, Espresso quits, or Low Power Mode turns on." = "会话期间合上盖子时也保持 Mac 唤醒（默认开启，接电源或用电池均可）。会话结束、退出 Espresso 或开启低电量模式时自动解除。";
+
+/* Status header */
+"Espresso: keeping Mac awake" = "Espresso：正在保持 Mac 唤醒";
+"Espresso: inactive" = "Espresso：未启用";
+"Awake" = "唤醒中";
+"Sleep allowed" = "允许睡眠";
+"Not Keeping Awake" = "未保持唤醒";
+"Keeping Awake — %@ left" = "保持唤醒中 — 剩余 %@";
+"Keeping Awake — Indefinitely" = "保持唤醒中 — 无限期";
+"Mac stays awake · display may sleep" = "Mac 保持唤醒 · 显示器可睡眠";
+"Mac and display stay awake" = "Mac 和显示器保持唤醒";
+"Mac held awake by %@" = "正在保持 Mac 唤醒的 App：%@";
+"Display sleeps in %@" = "显示器 %@后睡眠";
+"Display never sleeps" = "显示器从不睡眠";
+"Mac kept awake" = "Mac 被保持唤醒";
+"Mac in %@" = "Mac %@后";
+"Mac never sleeps" = "Mac 从不睡眠";
+
+/* Durations */
+"%dm" = "%d分钟";
+"%dh" = "%d小时";
+"%dh %dm" = "%d小时%d分";
+
+/* Lid-block setup */
+"Allow Espresso to block lid-close sleep?" = "允许 Espresso 阻止合盖睡眠？";
+"This needs a one-time administrator approval. Espresso adds a rule that lets it run only “pmset disablesleep” without a password, so it can always release the block on its own when a session ends, you quit, or Low Power Mode turns on." = "这需要管理员一次性授权。Espresso 会添加一条规则，只允许它免密码运行“pmset disablesleep”，这样在会话结束、退出 Espresso 或开启低电量模式时，它总能自行解除阻止。";
+"Set Up…" = "设置…";
+"Not Now" = "以后再说";
+"Espresso needs your password once so it can block lid-close sleep. It will only be allowed to run “pmset disablesleep”." = "Espresso 需要你输入一次密码，以便阻止合盖睡眠。它只会被允许运行“pmset disablesleep”。";
+"Setup didn't complete" = "设置未完成";
+"You can add the rule by hand in Terminal:" = "你也可以在“终端”中手动添加这条规则：";
+"Lid-close blocking is still unavailable" = "合盖不睡眠仍不可用";
+"Espresso installed its rule at %@, but “sudo -n pmset disablesleep” still asks for a password, so another sudoers setting takes precedence. Run “sudo -l” in Terminal to see which rules apply to you." = "Espresso 已将规则安装到 %@，但“sudo -n pmset disablesleep”仍要求输入密码，说明有其他 sudoers 设置优先生效。可在“终端”中运行“sudo -l”查看对你生效的规则。";
+"Lid-sleep block is still on" = "合盖不睡眠仍处于开启状态";
+"Espresso couldn’t clear “pmset disablesleep”. Run “sudo pmset disablesleep 0” in Terminal to restore normal lid behavior." = "Espresso 无法清除“pmset disablesleep”。请在“终端”中运行“sudo pmset disablesleep 0”，恢复正常的合盖行为。";

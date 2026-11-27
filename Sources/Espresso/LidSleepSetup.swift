@@ -60,8 +60,8 @@ enum LidSleepSetup {
     }
 
     static func appleScript(rule: String, target: String) -> String {
-        let prompt = "Espresso needs your password once so it can block lid-close sleep. "
-            + "It will only be allowed to run “pmset disablesleep”."
+        let prompt = L("Espresso needs your password once so it can block lid-close sleep. "
+            + "It will only be allowed to run “pmset disablesleep”.")
         return "do shell script \(appleScriptLiteral(installScript(rule: rule, target: target)))"
             + " with prompt \(appleScriptLiteral(prompt)) with administrator privileges"
     }

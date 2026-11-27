@@ -1,0 +1,3 @@
+/* English is the development language: the English text is the key, so no
+   entries are needed here. This file exists so macOS lists English as a
+   supported localization when choosing the app's language. */

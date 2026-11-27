@@ -33,6 +33,9 @@ when you get there.
   runs — on AC or battery — closing the lid doesn't sleep the Mac, so you
   can unplug and carry it without dropping agent runs, downloads, or SSH
   sessions. Needs a one-time, one-click setup; see the guardrails below.
+- **English and Simplified Chinese**: follows your system language, with no
+  setting to change (or pick a per-app language in System Settings →
+  General → Language & Region).
 - **Low Power Mode aware**: turning on Low Power Mode ends the running
   session — asking the Mac to conserve wins over keeping it awake.
   (Starting a session while Low Power Mode is already on still works.)

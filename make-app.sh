@@ -13,6 +13,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Espresso "$APP/Contents/MacOS/Espresso"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp -R Resources/en.lproj Resources/zh-Hans.lproj "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -28,6 +29,9 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>LSMinimumSystemVersion</key>   <string>13.0</string>
     <key>LSUIElement</key>              <true/>
     <key>CFBundleIconFile</key>         <string>AppIcon</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array><string>en</string><string>zh-Hans</string></array>
 </dict>
 </plist>
 EOF
